@@ -12,6 +12,7 @@ oxy_space = [
         api_key=os.getenv("DEFAULT_LLM_API_KEY"),
         base_url=os.getenv("DEFAULT_LLM_BASE_URL"),
         model_name=os.getenv("DEFAULT_LLM_MODEL_NAME"),
+        # llm_params={"stream": True},
     ),
     preset_tools.time_tools,
     oxy.ReActAgent(
