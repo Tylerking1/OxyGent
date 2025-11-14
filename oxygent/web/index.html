@@ -186,6 +186,9 @@
     var show_id = 0;
     var agent_id_dict = {};
     var agent_organization = {};
+    var current_streaming_agent = null; // 当前正在流式输出的agent名称（向后兼容）
+    var current_streaming_element = null; // 当前正在流式输出的DOM元素（向后兼容）
+    var streaming_elements_map = {}; // 存储不同node_id对应的流式输出元素 {node_id: {agent, element}}
 
     var master_agent_name = "master_agent";
     var div_right = $("#agent_log");
@@ -543,6 +546,13 @@
             return;
         }
         let jm = JSON.parse(message);
+        
+        // 处理流式输出消息
+        if (jm["type"] === "stream") {
+            handle_stream_message(jm);
+            return;
+        }
+        
         if (!["tool_call", "observation"].includes(jm["type"])) {
             return;
         }
@@ -574,7 +584,11 @@
                 chats.push(msg);
                 history["answer"] = JSON.parse(JSON.stringify(chats));
             } else if (jm["content"]["caller_category"] === 'agent' && jm["content"]["callee_category"] === 'llm') {
-                // 开始调用llm
+                // 开始调用llm，准备流式输出
+                current_streaming_agent = jm["content"]["caller"];
+                var node_id = jm["content"]["node_id"];
+                // 创建流式输出的消息元素
+                create_streaming_message_element(current_streaming_agent, node_id);
                 return;
             }
         }
@@ -587,6 +601,29 @@
                 if (typeof markdownInput !== 'string') {
                     markdownInput = JSON.stringify(markdownInput, null, 2);
                 }
+                // 如果存在流式输出元素，使用流式输出的内容（可能更完整）
+                // 查找对应的流式输出元素（优先使用node_id，否则使用agent名称）
+                var node_id = jm["content"]["node_id"];
+                var agent_name = jm["content"]["callee"];
+                var key = node_id || agent_name;
+                var streaming_info = streaming_elements_map[key];
+                
+                if (streaming_info && streaming_info.element) {
+                    var finalContent = streaming_info.element.text();
+                    if (finalContent) {
+                        markdownInput = finalContent;
+                    }
+                    // 移除streaming-content类并清理
+                    streaming_info.element.removeClass("streaming-content");
+                    delete streaming_elements_map[key];
+                } else if (current_streaming_element && current_streaming_agent) {
+                    // 向后兼容
+                    var finalContent = current_streaming_element.text();
+                    if (finalContent) {
+                        markdownInput = finalContent;
+                    }
+                }
+                
                 var msg = {"role": jm["content"].callee, "content": markdownInput};
                 chats.push(msg);
                 history["answer"] = JSON.parse(JSON.stringify(chats));
@@ -594,6 +631,14 @@
                 // $("#message_send").text("Send");
                 // 重置react_memory
                 plan_dict = {};
+                // 流式输出完成，移除streaming-content类（向后兼容）
+                if (current_streaming_element) {
+                    current_streaming_element.removeClass("streaming-content");
+                    current_streaming_element = null;
+                }
+                current_streaming_agent = null;
+                // 清理所有流式输出元素
+                streaming_elements_map = {};
             } else if (jm["content"]["caller_category"] === 'agent' && jm["content"]["callee_category"] === 'agent') {
                 push_plan(jm["content"]["caller"], "observation", jm["content"].output, jm["content"].node_id, jm["content"]["callee"]);
                 history["agent_log"] = JSON.parse(JSON.stringify(plan_dict[jm["content"]["caller"]]));
@@ -608,6 +653,21 @@
             } else if (jm["content"]["caller_category"] === 'agent' && jm["content"]["callee_category"] === 'llm') {
                 push_plan(jm["content"]["caller"], "plan", jm["content"].output, jm["content"].node_id, jm["content"]["callee"]);
                 history["agent_log"] = JSON.parse(JSON.stringify(plan_dict[jm["content"]["caller"]]));
+                // 流式输出完成，移除streaming-content类
+                // 注意：planning内容不保存到chats，只保存到plan_dict
+                var node_id = jm["content"]["node_id"];
+                var key = node_id || jm["content"]["caller"];
+                var streaming_info = streaming_elements_map[key];
+                if (streaming_info && streaming_info.element) {
+                    streaming_info.element.removeClass("streaming-content");
+                    delete streaming_elements_map[key];
+                }
+                // 向后兼容
+                if (current_streaming_element) {
+                    current_streaming_element.removeClass("streaming-content");
+                    current_streaming_element = null;
+                }
+                current_streaming_agent = null;
             } else if (jm["content"]["caller_category"] === 'agent' && ['tool'].includes(jm["content"]["callee_category"])) {
                 push_plan(jm["content"]["caller"], "observation", jm["content"].output, jm["content"].node_id, jm["content"]["callee"]);
                 history["agent_log"] = JSON.parse(JSON.stringify(plan_dict[jm["content"]["caller"]]));
@@ -703,6 +763,82 @@
             "tool_call": []
         });
         begin();
+    }
+
+    // 创建流式输出的消息元素
+    function create_streaming_message_element(agent_name, node_id) {
+        // 如果提供了node_id，使用node_id作为key
+        var key = node_id || agent_name;
+        
+        // 检查是否已经存在流式输出元素
+        if (streaming_elements_map[key]) {
+            return streaming_elements_map[key].element;
+        }
+        
+        var li = $("<li>");
+        var li_class = "master";
+        li.addClass(li_class);
+        
+        const idx = agent_id_dict[agent_name] % 16;
+        li.append(
+            $("<img>")
+                .attr("src", agentImgMap[idx]?.imgUrl)
+                .css("background-color", agentImgMap[idx]?.bgColor)
+        );
+        li.append($("<p>").text(agent_name));
+        
+        // 创建空的span用于流式输出内容，添加streaming-content类
+        var contentSpan = $('<span class="streaming-content">');
+        li.append(contentSpan);
+        
+        div_chatbox.append(li);
+        
+        // 存储到map中
+        streaming_elements_map[key] = {
+            agent: agent_name,
+            element: contentSpan,
+            node_id: node_id
+        };
+        
+        // 向后兼容：更新全局变量
+        current_streaming_element = contentSpan;
+        current_streaming_agent = agent_name;
+        
+        scroll_top_div_chat_history();
+        return contentSpan;
+    }
+    
+    // 处理流式消息
+    function handle_stream_message(jm) {
+        var agent_name = jm["content"]["agent"];
+        var node_id = jm["content"]["node_id"];
+        var delta = jm["content"]["delta"] || "";
+        
+        if (!delta) {
+            return;
+        }
+        
+        // 如果没有agent名称，使用默认值（向后兼容）
+        if (!agent_name) {
+            agent_name = current_streaming_agent || master_agent_name;
+        }
+        
+        // 获取或创建流式输出元素
+        var key = node_id || agent_name;
+        var streaming_info = streaming_elements_map[key];
+        
+        if (!streaming_info) {
+            // 创建新的流式输出元素
+            create_streaming_message_element(agent_name, node_id);
+            streaming_info = streaming_elements_map[key];
+        }
+        
+        // 追加流式内容
+        if (streaming_info && streaming_info.element) {
+            var currentText = streaming_info.element.text();
+            streaming_info.element.text(currentText + delta);
+            scroll_top_div_chat_history();
+        }
     }
 
     function send_msg_to_chatbox(msg, name = "user", at = "", scroll_top = true) {

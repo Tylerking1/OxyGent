@@ -142,7 +142,11 @@ class HttpLLM(RemoteLLM):
                             await oxy_request.send_message(
                                 {
                                     "type": "stream",
-                                    "content": {"delta": delta},
+                                    "content": {
+                                        "delta": delta,
+                                        "agent": oxy_request.caller,
+                                        "node_id": oxy_request.node_id,
+                                    },
                                     "_is_stored": False,
                                 }
                             )

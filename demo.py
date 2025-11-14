@@ -12,6 +12,7 @@ oxy_space = [
         api_key=os.getenv("DEFAULT_LLM_API_KEY"),
         base_url=os.getenv("DEFAULT_LLM_BASE_URL"),
         model_name=os.getenv("DEFAULT_LLM_MODEL_NAME"),
+        # llm_params={"stream": True},  # 开启流式输出
     ),
     preset_tools.time_tools,
     oxy.ReActAgent(
@@ -35,6 +36,7 @@ oxy_space = [
         is_master=True,
         name="master_agent",
         sub_agents=["time_agent", "file_agent", "math_agent"],
+        # team_size=2, # 开启团队协作，每个agent会调用2次llm
     ),
 ]
 

@@ -78,7 +78,11 @@ class OpenAILLM(RemoteLLM):
                         await oxy_request.send_message(
                             {
                                 "type": "stream",
-                                "content": {"delta": "<think>"},
+                                "content": {
+                                    "delta": "<think>",
+                                    "agent": oxy_request.caller,
+                                    "node_id": oxy_request.node_id,
+                                },
                                 "_is_stored": False,
                             }
                         )
@@ -91,7 +95,11 @@ class OpenAILLM(RemoteLLM):
                         await oxy_request.send_message(
                             {
                                 "type": "stream",
-                                "content": {"delta": "</think>"},
+                                "content": {
+                                    "delta": "</think>",
+                                    "agent": oxy_request.caller,
+                                    "node_id": oxy_request.node_id,
+                                },
                                 "_is_stored": False,
                             }
                         )
@@ -103,7 +111,11 @@ class OpenAILLM(RemoteLLM):
                     await oxy_request.send_message(
                         {
                             "type": "stream",
-                            "content": {"delta": char},
+                            "content": {
+                                "delta": char,
+                                "agent": oxy_request.caller,
+                                "node_id": oxy_request.node_id,
+                            },
                             "_is_stored": False,
                         }
                     )
