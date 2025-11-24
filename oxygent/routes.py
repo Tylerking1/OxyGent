@@ -33,7 +33,7 @@ from pydantic import BaseModel
 from .config import Config
 from .databases.db_es import JesEs, LocalEs
 from .db_factory import DBFactory
-from .oxy_factory import OxyFactory
+from .oxy_factory import OxyFactory, SecurityError
 from .schemas import OxyRequest, WebResponse
 from .utils.data_utils import add_post_and_child_node_ids
 
@@ -251,7 +251,7 @@ async def call(item: Item):
 
         POST /call
         {
-            "class_attr": {"class_name": "api_llm", "max_tokens": 2048"},
+            "class_attr": {"class_name": "api_llm", "max_tokens": 2048},
             "arguments": {"temperature": 0.7, "stream": False}
         }
 
@@ -262,6 +262,7 @@ async def call(item: Item):
         dict: ``WebResponse`` wrapper containing the model output.
     """
     try:
+        # Preprocess environment variable substitutions
         pattern = r"^\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}$"
         for tree in [
             item.class_attr,
@@ -275,7 +276,14 @@ async def call(item: Item):
                 if match:
                     tree[k] = os.getenv(match.group(1), v)
 
+        # Validate required field exists
+        if "class_name" not in item.class_attr:
+            return WebResponse(code=400, message="Missing required field: class_name").to_dict()
+            
+        # Set required name field
         item.class_attr["name"] = item.class_attr["class_name"].lower()
+        
+        # Type conversion for LLM parameters
         llm_params_type_dict = {
             "temperature": float,
             "max_tokens": int,
@@ -283,14 +291,24 @@ async def call(item: Item):
         }
         for k, v in item.class_attr.get("llm_params", dict()).items():
             if k in llm_params_type_dict:
-                item.class_attr["llm_params"][k] = llm_params_type_dict[k](v)
+                try:
+                    item.class_attr["llm_params"][k] = llm_params_type_dict[k](v)
+                except (ValueError, TypeError) as e:
+                    return WebResponse(code=400, message=f"Invalid parameter {k}: {str(e)}").to_dict()
+        
+        # Create Oxy instance with security checks and execute
         oxy = OxyFactory.create_oxy(item.class_attr["class_name"], **item.class_attr)
         oxy_response = await oxy.execute(OxyRequest(arguments=item.arguments))
         return WebResponse(data={"output": oxy_response.output}).to_dict()
+    except SecurityError as e:
+        logger.warning(f"Security check failed: {str(e)}", extra={
+            "class_name": item.class_attr.get("class_name", "unknown")
+        })
+        return WebResponse(code=403, message=f"Security error: {str(e)}").to_dict()
     except Exception:
         error_msg = traceback.format_exc()
-        logger.error(error_msg)
-        return WebResponse(code=500, message="遇到问题").to_dict()
+        logger.error(f"Error in /call endpoint: {error_msg}")
+        return WebResponse(code=500, message="Internal server error").to_dict()
 
 
 class Script(BaseModel):
