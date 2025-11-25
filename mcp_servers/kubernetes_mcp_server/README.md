@@ -12,9 +12,22 @@ Kubernetes MCP 服务器为 OxyGent 提供完整的 Kubernetes 集群管理功�
 pip install -r mcp_servers/kubernetes_mcp_server/requirements.txt
 ```
 
-### 2. 基础使用
+### 2. 设置环境变量
+
+注： 无K8S环境时，可以通过k8s `kind`在本地快速启动: https://kind.sigs.k8s.io/
 
 ```bash
+# 备份本地环境变量
+cp .env .env.bak
+
+# 使用本mcp的环境变量文件
+cp mcp_servers/kubernetes_mcp_server/.env.example .env
+```
+
+### 3. 基础使用
+
+```bash
+
 # 启动服务器 (stdio 模式)
 python -m mcp_servers.kubernetes_mcp_server.server --transport stdio
 
