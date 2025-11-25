@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 - Added support for dynamic registration of `oxy`
 
 ---
+## [1.0.6.3] - 2025-10-15
+
+### Added
+- Added fine-grained message storage, refer to [./examples/advanced/demo_save_message.py](./examples/advanced/demo_save_message.py)
+
+### Changed
+- Updated examples. For details, see [./examples](./examples)
+
+---
 
 ## [1.0.6.2] - 2025-10-09
 

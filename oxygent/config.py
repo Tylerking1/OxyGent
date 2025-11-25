@@ -95,7 +95,7 @@ class Config:
         },
         "agent": {
             "prompt": "",
-            "llm_model": "",
+            "llm_model": "default_llm",
             "input_schema": {
                 "properties": {"query": {"description": "Query question"}},
                 "required": ["query"],

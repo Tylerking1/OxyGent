@@ -76,7 +76,11 @@ class OpenAILLM(RemoteLLM):
                 if hasattr(chunk.choices[0].delta, "reasoning_content"):
                     if think_start:
                         await oxy_request.send_message(
-                            {"type": "stream", "content": {"delta": "<think>"}}
+                            {
+                                "type": "stream",
+                                "content": {"delta": "<think>"},
+                                "_is_stored": False,
+                            }
                         )
                         answer += "<think>"
                         think_start = False
@@ -85,7 +89,11 @@ class OpenAILLM(RemoteLLM):
                 elif hasattr(chunk.choices[0].delta, "content"):
                     if think_end:
                         await oxy_request.send_message(
-                            {"type": "stream", "content": {"delta": "</think>"}}
+                            {
+                                "type": "stream",
+                                "content": {"delta": "</think>"},
+                                "_is_stored": False,
+                            }
                         )
                         answer += "</think>"
                         think_end = False
@@ -93,7 +101,11 @@ class OpenAILLM(RemoteLLM):
                 if char:
                     answer += char
                     await oxy_request.send_message(
-                        {"type": "stream", "content": {"delta": char}}
+                        {
+                            "type": "stream",
+                            "content": {"delta": char},
+                            "_is_stored": False,
+                        }
                     )
             return OxyResponse(state=OxyState.COMPLETED, output=answer)
         else:

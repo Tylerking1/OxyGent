@@ -305,25 +305,6 @@ class ReActAgent(LocalAgent):
         Returns:
             OxyResponse: Final response with answer and ReAct memory trace.
         """
-
-        def _plain_text(q):
-            """list/dict query -> str"""
-            if isinstance(q, list):
-                buf = []
-                for it in q:
-                    if "type" in it:  # OpenAI content format
-                        if it["type"] == "text":
-                            buf.append(it["text"])
-                        else:
-                            # image_url / video_url / file_url : empty for hold order
-                            buf.append(f"[{it['type']}]")
-                    elif "part" in it:  # A2A parts
-                        buf.append(str(it["part"].get("data", "")))
-                    else:
-                        buf.append(str(it))
-                return " ".join(buf)
-            return str(q)
-
         react_memory = Memory()
         for current_round in range(self.max_react_rounds + 1):
             # Build complete message context: instruction + short memory + query + react memory
@@ -434,13 +415,14 @@ class ReActAgent(LocalAgent):
         tool_call_results = "\n\n".join(tool_call_results)
 
         # Generate final answer based on accumulated results
-        user_input_text = _plain_text(oxy_request.get_query())  # query -> str
-        user_input_with_results = f"User question: {user_input_text}\n---\nTool execution results: {tool_call_results}"
+        query = oxy_request.get_query()
         temp_messages = [
             Message.system_message(
                 "Please answer the user's question based on the given tool execution results."
             ),
-            Message.user_message(user_input_with_results),
+            Message.user_message(
+                f"User question: {query}\n---\nTool execution results: {tool_call_results}"
+            ),
         ]
         oxy_response = await oxy_request.call(
             callee=self.llm_model,

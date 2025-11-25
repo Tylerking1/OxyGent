@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from examples.advanced.continue_exec_demo import main
+from examples.advanced.demo_continue_exec import main
 
 
 @pytest.mark.asyncio

@@ -94,6 +94,12 @@ class BaseMCPClient(BaseTool):
                         mcp_client=self,
                         server_name=self.name,
                         input_schema=tool.inputSchema,
+                        func_process_input=self.func_process_input,
+                        func_process_output=self.func_process_output,
+                        func_format_input=self.func_format_input,
+                        func_format_output=self.func_format_output,
+                        func_execute=self.func_execute,
+                        func_interceptor=self.func_interceptor,
                         **params,
                     )
                     mcp_tool.set_mas(self.mas)

@@ -5,10 +5,13 @@ system. It handles multimodal input processing, think message extraction, and pr
 consistent interface for different LLM providers.
 """
 
+import copy
 import json
 import logging
+import os
 from typing import Optional
 
+import aiofiles
 from pydantic import Field
 
 from ...config import Config
@@ -79,28 +82,41 @@ class BaseLLM(Oxy):
 
     async def _get_messages(self, oxy_request: OxyRequest):
         # Preprocess messages for multimoding input
-        messages_processed = []
-        for message in oxy_request.arguments["messages"]:
+        if not self.is_multimodal_supported:
+            return oxy_request.arguments["messages"]
+
+        messages_processed = copy.deepcopy(oxy_request.arguments["messages"])
+        messages_temp = []
+        for message in messages_processed:
             role, content = message["role"], message["content"]
             if role == "user":
-                # 获取每一项
+                # 如果不是str类型则不做处理
+                if not isinstance(content, str):
+                    messages_temp.append(message)
+                    continue
+                # 解析文本
                 items = parse_mixed_string(content)
-                # 读取文件
+                # 读取文件替换成文本内容
                 index_of_doc_url = [
                     i for i, item in enumerate(items) if item["type"] == "doc_url"
                 ]
                 for i in index_of_doc_url:
                     item = items[i]
-                    with open(item["link"]) as f:
-                        doc_content = f.read()
-                        items[i] = {
-                            "type": "text",
-                            "content": f"The content of the `{item['desc']}` is: {doc_content} --- ",
-                        }
+                    item_link = item["link"]
+                    if os.path.exists(item_link):
+                        async with aiofiles.open(item_link, "r") as f:
+                            doc_content = await f.read()
+                            items[i] = {
+                                "type": "text",
+                                "content": f"The content of the `{item['desc']}` is: {doc_content} --- ",
+                            }
+                    else:
+                        items[i] = {"type": "text", "content": item["content"]}
+
                 # 判断是否是纯文本
                 is_pure_text = all([item["type"] == "text" for item in items])
                 # 直接拼接
-                if is_pure_text or not self.is_multimodal_supported:
+                if is_pure_text:
                     content = "".join([item["content"] for item in items])
                 else:
                     content = []
@@ -122,7 +138,8 @@ class BaseLLM(Oxy):
                             )
                         else:
                             pass
-            messages_processed.append({"role": role, "content": content})
+            messages_temp.append({"role": role, "content": content})
+        messages_processed = messages_temp
 
         # hold url
         if not self.is_convert_url_to_base64:

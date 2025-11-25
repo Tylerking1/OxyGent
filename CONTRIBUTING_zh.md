@@ -45,7 +45,7 @@ OxyGent致力于为每一位用户和开发者提供开放的智能体系统体�
     python demo.py
 ```
 ```bash
-    python -m examples.agents.single_demo
+    python -m examples.agents.demo_single_agent
 ```
 
 ## 4. 测试

@@ -91,7 +91,7 @@ class TestBrowserServer(unittest.TestCase):
         demo_path = os.path.abspath(
             os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "examples/agents/browser_demo.py",
+                "examples/mcp_tools/browser_demo.py",
             )
         )
 
@@ -199,7 +199,7 @@ class TestBrowserServer(unittest.TestCase):
         demo_path = os.path.abspath(
             os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "examples/agents/browser_demo.py",
+                "examples/mcp_tools/browser_demo.py",
             )
         )
 

@@ -9,6 +9,16 @@
 
 ---
 
+## [1.0.6.3] - 2025-10-15
+
+### Added
+- 新增细粒度的消息存储，详见 [./examples/advanced/demo_save_message.py](./examples/advanced/demo_save_message.py)
+
+### Changed
+- 更新示例，详见 [./examples](./examples)
+
+---
+
 ## [1.0.6.2] - 2025-10-09
 
 ### Added

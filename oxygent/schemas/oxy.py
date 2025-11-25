@@ -412,10 +412,10 @@ class OxyRequest(BaseModel):
     def has_arguments(self, key):
         return key in self.arguments
 
-    def get_arguments(self, key=None):
+    def get_arguments(self, key=None, default=None):
         if key is None:
             return self.arguments
-        return self.arguments.get(key)
+        return self.arguments.get(key, default)
 
     def set_arguments(self, key, value):
         self.arguments[key] = value
@@ -423,10 +423,10 @@ class OxyRequest(BaseModel):
     def has_shared_data(self, key):
         return key in self.shared_data
 
-    def get_shared_data(self, key=None):
+    def get_shared_data(self, key=None, default=None):
         if key is None:
             return self.shared_data
-        return self.shared_data.get(key)
+        return self.shared_data.get(key, default)
 
     def set_shared_data(self, key, value):
         self.shared_data[key] = value
@@ -434,10 +434,10 @@ class OxyRequest(BaseModel):
     def has_group_data(self, key):
         return key in self.group_data
 
-    def get_group_data(self, key=None):
+    def get_group_data(self, key=None, default=None):
         if key is None:
             return self.group_data
-        return self.group_data.get(key)
+        return self.group_data.get(key, default)
 
     def set_group_data(self, key, value):
         self.group_data[key] = value
@@ -445,10 +445,10 @@ class OxyRequest(BaseModel):
     def has_global_data(self, key):
         return key in self.mas.global_data
 
-    def get_global_data(self, key=None):
+    def get_global_data(self, key=None, default=None):
         if key is None:
             return self.mas.global_data
-        return self.mas.global_data.get(key)
+        return self.mas.global_data.get(key, default)
 
     def set_global_data(self, key, value):
         self.mas.global_data[key] = value

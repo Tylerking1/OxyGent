@@ -46,7 +46,7 @@ The position of the class is:
 
 ```python
 oxy.SSEMCPClient(
-    name="my_tools",
-    sse_url="http://127.0.0.1:9000/sse"
+    name="math_tools",
+    sse_url="http://127.0.0.1:8000/sse"
 )
 ```

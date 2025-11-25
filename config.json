@@ -24,7 +24,9 @@
             "max_tokens": 4096, 
             "top_p": 1
         },
-        "cache": {"save_dir": "./cache_dir"},
+        "cache": {
+            "save_dir": "./cache_dir"
+        },
         "message": {
             "is_send_tool_call": true,
             "is_send_observation": true,
@@ -58,7 +60,7 @@
         },
         "agent": {
             "prompt": "",
-            "llm_model": "",
+            "llm_model": "default_llm",
             "input_schema": {
                 "properties": {"query": {"description": "Query question"}},
                 "required": ["query"]
@@ -70,8 +72,8 @@
         }
     },
     "dev": {
-        "cache": {
-            "save_dir": "./cache_dir_dev"
+        "app": {
+            "name": "app-dev"
         },
         "es": {
             "hosts": [

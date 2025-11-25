@@ -37,10 +37,10 @@ oxy_space = [
         semaphore=4,
     ),
     oxy.StdioMCPClient(
-        name="my_tools",
+        name="math_tools",
         params={
             "command": "uv",
-            "args": ["--directory", "./mcp_servers", "run", "my_tools.py"],
+            "args": ["--directory", "./mcp_servers", "run", "math_tools.py"],
         },
     ),
     oxy.SSEOxyGent(
@@ -53,10 +53,9 @@ oxy_space = [
         desc="An tool for pi query",
         is_master=True,
         sub_agents=["time_agent"],
-        tools=["my_tools"],
+        tools=["math_tools"],
         func_workflow=workflow,
         llm_model="default_name",
-        is_retain_master_short_memory=True,
     ),
 ]
 

@@ -29,7 +29,7 @@ async with MAS(oxy_space=oxy_space) as mas:
     """单轮对话"""
     payload = {
         "query": "What is it in the picture?",  # 提问
-        "attachments": [os.getenv("DEFAULT_IMAGE_URL")],  # 传入图片附件
+        "attachments": ["http://image.jd.com/123.jpg"],  # 传入图片附件
     }
     oxy_response = await mas.chat_with_agent(payload=payload)
     print("LLM: ", oxy_response.output)
@@ -108,7 +108,7 @@ async def main():
         """单轮对话"""
         payload = {
             "query": "What is it in the picture?",
-            "attachments": [os.getenv("DEFAULT_IMAGE_URL")],  # 传入图片 URL
+            "attachments": ["http://image.jd.com/123.jpg"],  # 传入图片 URL
         }
         oxy_response = await mas.chat_with_agent(payload=payload)
         print("LLM: ", oxy_response.output)
@@ -122,7 +122,6 @@ if __name__ == "__main__":
 
 1. **`is_multimodal_supported=True`**：启用多模态支持，允许您将图像、视频等附件作为输入。
 2. **`attachments`**：用于传入图像或其他附件。您可以提供 URL 或 Base64 编码的文件。
-3. **`os.getenv("DEFAULT_IMAGE_URL")`**：获取环境变量中定义的图像 URL，您也可以根据需要传入其他图像资源。
 
 
 [上一章：创建分布式系统](./11_dstributed.md)

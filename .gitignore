@@ -240,6 +240,5 @@ pyproject.toml*
 
 # 运行时产生的文件
 cache_dir/
-cache_dir_dev/
 local_file/
 deployment/

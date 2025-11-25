@@ -88,7 +88,7 @@ class LocalAgent(BaseAgent):
     )
 
     short_memory_size: int = Field(
-        Config.get_agent_short_memory_size(),
+        default_factory=Config.get_agent_short_memory_size,
         description="Number of short-term memory entries to retain",
     )
     intent_understanding_agent: Optional[str] = Field(

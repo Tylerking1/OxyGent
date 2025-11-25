@@ -46,7 +46,7 @@ async def workflow(oxy_request: OxyRequest):
         name="math_agent",
         desc="A tool for pi query",
         sub_agents=["time_agent"],
-        tools=["my_tools"],
+        tools=["math_tools"],
         func_workflow=workflow,
         is_retain_master_short_memory=True,
     ),

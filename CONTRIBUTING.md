@@ -44,7 +44,7 @@ For developers who want to contribute to our code, here is the guidance:
     python demo.py
 ```
 ```bash
-    python -m examples.agents.single_demo
+    python -m examples.agents.demo_single_agent
 ```
 
 ## 4. Test

@@ -24,10 +24,8 @@ oxy_space = [
     oxy.ReActAgent(
         name="time_agent",
         desc="A tool for time query",
-        is_master=True,
         tools=["time_tools"],
         llm_model="default_name",
-        timeout=10,
     ),
 ]
 

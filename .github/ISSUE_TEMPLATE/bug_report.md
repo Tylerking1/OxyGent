@@ -25,4 +25,4 @@ assignees: ''
 - Other deployments:
 
 **Logs and Reports**
-> If possible, please upload files containing `/cache_dir` or `/cache_dir_dev` for detailed error logs.
+> If possible, please upload files containing `/cache_dir` for detailed error logs.

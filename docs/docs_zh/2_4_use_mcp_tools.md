@@ -4,10 +4,10 @@
 
 ## 1.本地MCP工具
 
-首先，创建一个 `mcp_servers` 文件夹，并在 `/mcp_servers/my_tools.py` 文件中使用 `FastMCP` 声明一个 MCP 实例：
+首先，创建一个 `mcp_servers` 文件夹，并在 `/mcp_servers/math_tools.py` 文件中使用 `FastMCP` 声明一个 MCP 实例：
 
 ```python
-# mcp_servers/my_tools.py
+# mcp_servers/math_tools.py
 import math
 from decimal import Decimal, getcontext
 
@@ -21,8 +21,8 @@ mcp = FastMCP()
 接着，您可以使用类似 `FunctionHub` 的方式注册工具：
 
 ```python
-# mcp_servers/my_tools.py
-@mcp.tool(description="Index tool")
+# mcp_servers/math_tools.py
+@mcp.tool(description="Power calculator tool")
 def power(
     n: int = Field(description="base"), m: int = Field(description="index", default=2)
 ) -> int:
@@ -34,10 +34,10 @@ def power(
 
 ```python
     oxy.StdioMCPClient(
-        name="my_tools",
+        name="math_tools",
         params={
             "command": "uv",
-            "args": ["--directory", "./mcp_servers", "run", "my_tools.py"],
+            "args": ["--directory", "./mcp_servers", "run", "math_tools.py"],
         },
     ),
 ```
@@ -74,17 +74,17 @@ oxy_space = [
         },
     ),
     oxy.StdioMCPClient(
-        name="my_tools",
+        name="math_tools",
         params={
             "command": "uv",
-            "args": ["--directory", "./mcp_servers", "run", "my_tools.py"],
+            "args": ["--directory", "./mcp_servers", "run", "math_tools.py"],
         },
     ),
     tools.file_tools,
     oxy.ReActAgent(
         name="master_agent",
         is_master=True,
-        tools=["file_tools","time_tools","my_tools"],
+        tools=["file_tools","time_tools","math_tools"],
     ),
 ]
 
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 ```
 
 ```python
-#mcp_servers/my_tools.py
+#mcp_servers/math_tools.py
 import math
 from decimal import Decimal, getcontext
 
@@ -112,7 +112,7 @@ from pydantic import Field
 mcp = FastMCP()
 
 
-@mcp.tool(description="Index tool")
+@mcp.tool(description="Power calculator tool")
 def power(
     n: int = Field(description="base"), m: int = Field(description="index", default=2)
 ) -> int:
@@ -156,15 +156,15 @@ if __name__ == "__main__":
 如果需要使用SSE MCP工具，您可以在声明`FastMCP`对象时增加端口参数：
 
 ```python
-mcp = FastMCP("my_tools", port=9000)
+mcp = FastMCP("math_tools", port=8000)
 ```
 
 然后您可以通过在`sse_url`中传入端口的方式注册工具到OxyGent：
 
 ```python
 oxy.SSEMCPClient(
-    name="my_tools",
-    sse_url="http://127.0.0.1:9000/sse"
+    name="math_tools",
+    sse_url="http://127.0.0.1:8000/sse"
 ),
 ```
 

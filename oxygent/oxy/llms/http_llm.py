@@ -140,7 +140,11 @@ class HttpLLM(RemoteLLM):
                         if delta:
                             result_parts.append(delta)
                             await oxy_request.send_message(
-                                {"type": "stream", "content": {"delta": delta}}
+                                {
+                                    "type": "stream",
+                                    "content": {"delta": delta},
+                                    "_is_stored": False,
+                                }
                             )
             result = "".join(result_parts)
             return OxyResponse(state=OxyState.COMPLETED, output=result)

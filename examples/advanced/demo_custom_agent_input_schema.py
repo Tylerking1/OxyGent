@@ -1,9 +1,7 @@
 import asyncio
 import os
 
-from oxygent import MAS, Config, OxyRequest, oxy
-
-Config.set_agent_llm_model("default_llm")
+from oxygent import MAS, OxyRequest, oxy
 
 
 async def workflow(oxy_request: OxyRequest):
@@ -18,13 +16,12 @@ oxy_space = [
         api_key=os.getenv("DEFAULT_LLM_API_KEY"),
         base_url=os.getenv("DEFAULT_LLM_BASE_URL"),
         model_name=os.getenv("DEFAULT_LLM_MODEL_NAME"),
-        llm_params={"temperature": 0.01},
-        semaphore=4,
     ),
     oxy.ReActAgent(
         name="master_agent",
         sub_agents=["math_agent"],
         is_master=True,
+        llm_model="default_llm",
     ),
     oxy.WorkflowAgent(
         name="math_agent",

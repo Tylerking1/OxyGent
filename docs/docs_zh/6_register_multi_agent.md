@@ -18,7 +18,7 @@
     oxy.ReActAgent(
         name="math_agent",
         desc="A tool that can do math calculates",
-        tools=["my_tools"],
+        tools=["math_tools"],
     ),
 ```
 
@@ -67,10 +67,10 @@ oxy_space = [
         },
     ),
     oxy.StdioMCPClient(
-        name="my_tools",
+        name="math_tools",
         params={
             "command": "uv",
-            "args": ["--directory", "./mcp_servers", "run", "my_tools.py"],
+            "args": ["--directory", "./mcp_servers", "run", "math_tools.py"],
         },
     ),
     tools.file_tools,
@@ -87,7 +87,7 @@ oxy_space = [
     oxy.ReActAgent(
         name="math_agent",
         desc="A tool that can do math calculates",
-        tools=["my_tools"],
+        tools=["math_tools"],
     ),
     oxy.ReActAgent(
         name="master_agent",
