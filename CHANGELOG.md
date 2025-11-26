@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 - Added support for dynamic registration of `oxy`
 
 ---
+
+## [1.0.8] - 2025-11-14
+
+### Added
+- Added streaming output capability to the frontend
+- Added Agent name field to think messages
+
+### Changed
+- LChanged the default value of the LLM parameter stream to True
+
+---
 ## [1.0.6.3] - 2025-10-15
 
 ### Added

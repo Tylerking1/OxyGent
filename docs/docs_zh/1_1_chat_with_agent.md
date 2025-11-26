@@ -63,7 +63,7 @@ async def chat():
             history.append({"role": "user", "content": user_in})
             result = await mas.call(
                 callee="master_agent",
-                arguments={"messages": history},
+                arguments={"query": history},
             )
             assistant_out = result
             print(f"Assistant: {assistant_out}\n")

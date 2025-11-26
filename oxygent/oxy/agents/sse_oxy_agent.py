@@ -49,10 +49,22 @@ class SSEOxyGent(RemoteAgent):
         url = build_url(self.server_url, "/sse/chat")
         answer = ""
 
+        EXCLUDED_HEADERS = [
+            "host",
+            "connection",
+            "accept-encoding",
+        ]
         headers = {
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
+            k: v
+            for k, v in oxy_request.get_shared_data("_headers", {}).items()
+            if k not in EXCLUDED_HEADERS
         }
+        headers.update(
+            {
+                "Accept": "text/event-stream",
+                "Content-Type": "application/json",
+            }
+        )
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 url, data=json.dumps(payload), headers=headers

@@ -60,6 +60,7 @@ def oxy_request():
 # ──────────────────────────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_execute_success(monkeypatch, llm, oxy_request):
+    oxy_request.arguments["stream"] = False
     captured = {}
 
     # ----- mock httpx.AsyncClient ------------------------------------------------
@@ -105,6 +106,8 @@ async def test_execute_success(monkeypatch, llm, oxy_request):
 
 @pytest.mark.asyncio
 async def test_execute_http_error(monkeypatch, llm, oxy_request):
+    oxy_request.arguments["stream"] = False
+
     class FakeErrResponse(Exception):
         pass
 

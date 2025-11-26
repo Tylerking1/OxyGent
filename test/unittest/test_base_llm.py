@@ -62,4 +62,6 @@ async def test_execute_and_think(llm, oxy_request):
     assert resp.state is OxyState.COMPLETED
     assert resp.output.endswith("Hello")
 
-    oxy_request.send_message.assert_any_await({"type": "think", "content": "internal"})
+    oxy_request.send_message.assert_any_await(
+        {"type": "think", "content": "internal", "agent": "user"}
+    )

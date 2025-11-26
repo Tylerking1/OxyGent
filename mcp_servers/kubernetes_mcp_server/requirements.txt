@@ -1,0 +1,4 @@
+-r ../../requirements.txt
+kubernetes==28.1.0
+PyYAML==6.0.2
+Jinja2==3.1.4

@@ -217,7 +217,9 @@ class BaseLLM(Oxy):
                     tool_call_dict = json.loads(extract_first_json(oxy_response.output))
                     if "think" in tool_call_dict:
                         msg = tool_call_dict["think"].strip()
-                await oxy_request.send_message({"type": "think", "content": msg})
+                await oxy_request.send_message(
+                    {"type": "think", "content": msg, "agent": oxy_request.caller}
+                )
             except json.JSONDecodeError:
                 pass
             except Exception as e:

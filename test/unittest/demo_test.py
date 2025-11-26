@@ -39,16 +39,26 @@ oxy_space = [
     preset_tools.system_tools,
     preset_tools.shell_tools,
     preset_tools.python_tools,
-    preset_tools.baidu_search_tools,
     oxy.ReActAgent(
         name="tool_agent",
         desc="This is a tool library agent, which contains a variety of tools.",
-        tools=["http_tools", "string_tools", "system_tools", "shell_tools", "python_tools", "baidu_search_tools"],
+        tools=[
+            "http_tools",
+            "string_tools",
+            "system_tools",
+            "shell_tools",
+            "python_tools",
+        ],
     ),
     oxy.ReActAgent(
         is_master=True,
         name="master_agent",
-        sub_agents=["time_agent", "file_agent", "math_agent", "tool_agent",],
+        sub_agents=[
+            "time_agent",
+            "file_agent",
+            "math_agent",
+            "tool_agent",
+        ],
     ),
 ]
 

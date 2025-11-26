@@ -1045,6 +1045,7 @@ class MAS(BaseModel):
                 port=port,
                 log_level=Config.get_server_log_level().lower(),
                 log_config=None,
+                workers=Config.set_server_workers(),
             )
             server = uvicorn.Server(config)
 

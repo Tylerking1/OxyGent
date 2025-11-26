@@ -92,6 +92,7 @@ class Config:
             "port": 8080,
             "auto_open_webpage": True,
             "log_level": "INFO",
+            "workers": 1,
         },
         "agent": {
             "prompt": "",
@@ -527,6 +528,16 @@ class Config:
     @classmethod
     def get_server_log_level(cls):
         return cls.get_module_config("server", "log_level")
+
+    @classmethod
+    def set_server_workers(cls, workers=None):
+        if workers is None:
+            workers = os.cpu_count() * 2 + 1
+        cls.set_module_config("server", "workers", workers)
+
+    @classmethod
+    def get_server_workers(cls):
+        return cls.get_module_config("server", "workers")
 
     """ agent """
 
