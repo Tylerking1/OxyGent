@@ -14,6 +14,7 @@ tool_modules = [
     "shell_tools",
     "python_tools",
     "image_gen_tools",
+    "document_tools",  # 文档处理工具集（PDF、Word、Excel等）
 ]
 
 __all__ = []
