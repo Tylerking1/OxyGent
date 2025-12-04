@@ -7,6 +7,7 @@ It supports both synchronous and asynchronous functions with automatic conversio
 
 import asyncio
 import functools
+import concurrent.futures
 
 from pydantic import Field
 
@@ -28,6 +29,18 @@ class FunctionHub(BaseTool):
     func_dict: dict = Field(
         default_factory=dict, description="Registry of functions and their metadata"
     )
+
+    def __init__(self, **data):
+        """Initialize the FunctionHub with thread pool support."""
+        super().__init__(**data)
+        self._thread_pool = None  # Private attribute for thread pool
+
+    @property
+    def thread_pool(self):
+        """Lazy initialization of thread pool."""
+        if self._thread_pool is None:
+            self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        return self._thread_pool
 
     async def init(self):
         """Initialize the hub by creating FunctionTool instances for all registered
@@ -67,14 +80,26 @@ class FunctionHub(BaseTool):
             if asyncio.iscoroutinefunction(func):
                 async_func = func
             else:
-                # Wrap synchronous function to make it asynchronous
+                # Wrap synchronous function to make it asynchronous using thread pool
                 @functools.wraps(func)
                 async def async_func(*args, **kwargs):
-                    # TODO: Use thread pool for blocking synchronous operations
-                    return func(*args, **kwargs)
+                    # Use thread pool for blocking synchronous operations
+                    loop = asyncio.get_event_loop()
+                    return await loop.run_in_executor(
+                        self.thread_pool,
+                        func,
+                        *args,
+                        **kwargs
+                    )
 
             # Register function in the hub's dictionary
             self.func_dict[func.__name__] = (description, async_func)
             return async_func  # Return the async version
 
         return decorator
+
+    async def cleanup(self):
+        """Clean up resources, including the thread pool."""
+        if self._thread_pool:
+            self._thread_pool.shutdown(wait=True)
+        await super().cleanup()
