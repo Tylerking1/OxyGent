@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from ..config import Config
 from ..utils.common_utils import generate_uuid, is_image
+from .message import SSEMessage
 
 logger = logging.getLogger(__name__)
 
@@ -352,12 +353,15 @@ class OxyRequest(BaseModel):
     async def start(self) -> "OxyResponse":
         return await self.get_oxy(self.callee).execute(self)
 
-    async def send_message(self, message):
-        if self.mas and message:
+    async def send_message(self, message=None, event=None, id=None):
+        if self.mas:
+            args = {"id": id, "event": event, "data": message}
+            filtered_args = {k: v for k, v in args.items() if v is not None}
+            sse_message = SSEMessage(**filtered_args)
             redis_key = (
                 f"{self.mas.message_prefix}:{self.mas.name}:{self.current_trace_id}"
             )
-            await self.mas.send_message(message, redis_key)
+            await self.mas.send_message(sse_message, redis_key)
 
     def set_query(self, query, master_level=False):
         if master_level:
@@ -454,7 +458,7 @@ class OxyRequest(BaseModel):
         self.mas.global_data[key] = value
 
     async def break_task(self):
-        await self.send_message({"event": "close", "data": "done"})
+        await self.send_message(message="done", event="close")
         self.mas.active_tasks[self.current_trace_id].cancel()
 
 

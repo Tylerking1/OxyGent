@@ -52,12 +52,24 @@ class SSEOxyGent(RemoteAgent):
         EXCLUDED_HEADERS = [
             "host",
             "connection",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile",
+            "sec-ch-ua-platform",
+            "user-agent",
+            "referer",
             "accept-encoding",
+            "accept-language",
+            "cache-control",
+            "sec-fetch-site",
+            "sec-fetch-mode",
+            "sec-fetch-dest",
+            "accept",
+            "content-length",
         ]
         headers = {
             k: v
             for k, v in oxy_request.get_shared_data("_headers", {}).items()
-            if k not in EXCLUDED_HEADERS
+            if k.lower() not in EXCLUDED_HEADERS
         }
         headers.update(
             {
@@ -69,39 +81,69 @@ class SSEOxyGent(RemoteAgent):
             async with session.post(
                 url, data=json.dumps(payload), headers=headers
             ) as resp:
-                async for line in resp.content:
-                    if line:
-                        decoded_line = line.decode("utf-8").strip()
-                        if decoded_line.startswith("data: "):
-                            data = decoded_line[6:]
-                            if data == "done":
-                                logger.info(
-                                    f"Received request to terminate SSE connection: {data}. {self.server_url}",
-                                    extra={
-                                        "trace_id": oxy_request.current_trace_id,
-                                        "node_id": oxy_request.node_id,
-                                    },
-                                )
-                                await resp.release()
-                                break
-                            data = json.loads(data)
+                #
+                message_id = None
+                message_event = None
+                message_data = None
 
-                            if data["type"] == "answer":
-                                answer = data.get("content")
-                            elif data["type"] in ["tool_call", "observation"]:
-                                if (
-                                    data["content"]["caller_category"] == "user"
-                                    or data["content"]["callee_category"] == "user"
-                                ):
-                                    continue
-                                else:
-                                    # Discord user and callee
-                                    if not self.is_share_call_stack:
-                                        data["content"]["call_stack"] = (
-                                            oxy_request.call_stack
-                                            + data["content"]["call_stack"][2:]
+                async for line in resp.content:
+                    line = line.decode("utf-8").strip()
+
+                    if line.startswith("id:"):
+                        message_id = line[3:].strip()
+                    elif line.startswith("event:"):
+                        message_event = line[6:].strip()
+                    elif line.startswith("data:"):
+                        message_data = line[5:].strip()
+
+                    # 当到达一个完整的事件时，处理它
+                    if line == "":
+                        if message_event == "close":
+                            logger.info(
+                                f"Received request to terminate SSE connection: {message_data}. {self.server_url}",
+                                extra={
+                                    "trace_id": oxy_request.current_trace_id,
+                                    "node_id": oxy_request.node_id,
+                                },
+                            )
+                            await resp.release()
+                            break
+                        else:
+                            try:
+                                data = json.loads(message_data)
+                                message_data_type = data.get("type", "")
+                                if message_data_type == "answer":
+                                    answer = data.get("content")
+                                elif message_data_type in [
+                                    "tool_call",
+                                    "observation",
+                                ]:
+                                    if (
+                                        data["content"]["caller_category"] == "user"
+                                        or data["content"]["callee_category"] == "user"
+                                    ):
+                                        continue
+                                    else:
+                                        # Discord user and callee
+                                        if not self.is_share_call_stack:
+                                            data["content"]["call_stack"] = (
+                                                oxy_request.call_stack
+                                                + data["content"]["call_stack"][2:]
+                                            )
+                                        await oxy_request.send_message(
+                                            data, event=message_event, id=message_id
                                         )
-                                    await oxy_request.send_message(data)
-                            else:
-                                await oxy_request.send_message(data)
+                                else:
+                                    await oxy_request.send_message(
+                                        data, event=message_event, id=message_id
+                                    )
+                            except json.JSONDecodeError:
+                                await oxy_request.send_message(
+                                    data, event=message_event, id=message_id
+                                )
+
+                        # 重置变量以准备下一个事件
+                        message_id = None
+                        message_event = None
+                        message_data = None
         return OxyResponse(state=OxyState.COMPLETED, output=answer)

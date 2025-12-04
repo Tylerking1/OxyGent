@@ -42,7 +42,7 @@ from .oxy.base_tool import BaseTool
 from .oxy.llms.base_llm import BaseLLM
 from .oxy.mcp_tools.base_mcp_client import BaseMCPClient
 from .routes import router
-from .schemas import OxyRequest, OxyResponse, WebResponse
+from .schemas import OxyRequest, OxyResponse, SSEMessage, WebResponse
 from .utils.common_utils import (
     generate_uuid,
     get_format_time,
@@ -566,7 +566,7 @@ class MAS(BaseModel):
         oxy_response = await oxy.execute(oxy_request)
         return oxy_response.output
 
-    async def send_message(self, message, redis_key):
+    async def send_message(self, sse_message: SSEMessage, redis_key: str):
         """Push *message* onto a capped Redis list.
 
         The data is MsgPack‑encoded before being stored.  At most **10** items
@@ -576,8 +576,9 @@ class MAS(BaseModel):
             message: Any serialisable Python object.
             redis_key: Target Redis key (usually ``mas_msg:{app}:{trace_id}``).
         """
+        message = sse_message.data
         if Config.get_message_is_show_in_terminal():
-            logger.info(f"--- Send Message ---: {message}")
+            logger.info(f"--- Send Message ---: {sse_message.to_sse()}")
 
         message_type = ""
         message_is_stored = Config.get_message_is_stored()
@@ -591,18 +592,18 @@ class MAS(BaseModel):
             if _is_send in message:
                 message_is_send = message[_is_send]
                 del message[_is_send]
+            sse_message.data = message
 
         if message_is_stored:
             parts = redis_key.split(":")
             current_trace_id = parts[-1] if len(parts) >= 3 else ""
 
             # Insert into Elasticsearch
-            message_id = generate_uuid()
             await self.es_client.index(
                 Config.get_app_name() + "_message",
-                doc_id=message_id,
+                doc_id=sse_message.id,
                 body={
-                    "message_id": message_id,
+                    "message_id": sse_message.id,
                     "trace_id": current_trace_id,
                     "message": to_json(message),
                     "message_type": message_type,
@@ -610,7 +611,7 @@ class MAS(BaseModel):
                 },
             )
         if message_is_send:
-            bytes_msg = msgpack.packb(msgpack_preprocess(message))
+            bytes_msg = msgpack.packb(msgpack_preprocess(sse_message.to_sse()))
             await self.redis_client.lpush(redis_key, bytes_msg)
 
     async def chat_with_agent(
@@ -744,7 +745,7 @@ class MAS(BaseModel):
 
             if send_msg_key:
                 await self.send_message(
-                    {"event": "close", "data": "done"}, send_msg_key
+                    SSEMessage(event="close", data="done"), send_msg_key
                 )
             return oxy_response
         except Exception:
@@ -792,17 +793,19 @@ class MAS(BaseModel):
                 if bytes_msg is None:
                     await asyncio.sleep(0.1)
                     continue
-                message = msgpack.unpackb(bytes_msg)
-                if message:
+                sse_message_dict = msgpack.unpackb(bytes_msg)
+                if sse_message_dict:
+                    if sse_message_dict.get("event", "message") == "close":
+                        yield sse_message_dict
+                        logger.info(
+                            "SSE connection terminated.",
+                            extra={"trace_id": current_trace_id},
+                        )
+                        break
+                    # Convert before sending message: Use msg.content.arguments.query
+
+                    message = sse_message_dict.get("data", {})
                     if isinstance(message, dict):
-                        if "event" in message:
-                            yield message
-                            logger.info(
-                                "SSE connection terminated.",
-                                extra={"trace_id": current_trace_id},
-                            )
-                            break
-                        # Convert before sending message: Use msg.content.arguments.query
                         if message.get("type", "") == "tool_call" and isinstance(
                             message.get("content", {})
                             .get("arguments", {})
@@ -819,8 +822,9 @@ class MAS(BaseModel):
                             message["content"]["output"] = to_json(
                                 message["content"]["output"]
                             )
+                        sse_message_dict["data"] = message
                     # Send message
-                    yield {"data": to_json(message)}
+                    yield sse_message_dict
         except asyncio.CancelledError:
             logger.info(
                 "SSE connection terminated.",
@@ -965,13 +969,18 @@ class MAS(BaseModel):
             elif request.method == "POST":
                 payload = await request.json()
 
+            current_trace_id = payload.get("current_trace_id", generate_uuid())
+            logger.info(
+                f"Received payload: {json.dumps(payload, ensure_ascii=False)}",
+                extra={"trace_id": current_trace_id},
+            )
             payload = self.func_filter(payload)
 
             if "query" not in payload:
                 payload["query"] = ""
 
             if "current_trace_id" not in payload:
-                payload["current_trace_id"] = generate_uuid()
+                payload["current_trace_id"] = current_trace_id
 
             # fetch headers
             if "shared_data" not in payload:

@@ -9,6 +9,16 @@
 
 ---
 
+## [1.0.9.2] - 2025-12-04
+
+### Added
+- 打印payload日志
+- history表存储时，memory的answer字段强转str
+- 标准化sse消息字段id、event、data
+- SSEOxyGent透传headers
+
+---
+
 ## [1.0.8] - 2025-11-14
 
 ### Added

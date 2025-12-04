@@ -198,7 +198,7 @@ class BaseAgent(BaseFlow):
                 # Prepare history data with query-answer pair
                 history = {
                     "query": oxy_request.get_query(),
-                    "answer": oxy_response.output,
+                    "answer": str(oxy_response.output),
                 }
                 history.update(oxy_response.extra)
 

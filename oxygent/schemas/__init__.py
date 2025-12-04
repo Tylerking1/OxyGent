@@ -1,6 +1,7 @@
 from .color import Color
 from .llm import LLMResponse, LLMState
 from .memory import Memory, Message
+from .message import SSEMessage
 from .observation import ExecResult, Observation
 from .oxy import OxyOutput, OxyRequest, OxyResponse, OxyState
 from .web import WebResponse
@@ -18,4 +19,5 @@ __all__ = [
     "OxyResponse",
     "OxyOutput",
     "WebResponse",
+    "SSEMessage",
 ]
