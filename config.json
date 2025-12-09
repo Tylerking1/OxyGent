@@ -33,6 +33,7 @@
             "is_send_think": true,
             "is_send_answer": true,
             "is_stored": false,
+            "stream_batch_size": 256,
             "is_show_in_terminal": false,
             "is_send_full_arguments": false
         },

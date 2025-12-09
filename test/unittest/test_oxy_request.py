@@ -23,7 +23,7 @@ class DummyMAS:
         self.message_prefix = "msg"
         self.name = "ut_mas"
 
-    async def send_message(self, message, redis_key):
+    async def send_message(self, message, redis_key, group_id=""):
         self.last_msg = (redis_key, message)
 
 

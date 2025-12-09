@@ -45,6 +45,8 @@ class SSEOxyGent(RemoteAgent):
             del payload["node_id_stack"]
             payload["caller"] = "user"
         del payload["arguments"]
+        if "shared_data" in payload and "_headers" in payload["shared_data"]:
+            del payload["shared_data"]["_headers"]
 
         url = build_url(self.server_url, "/sse/chat")
         answer = ""

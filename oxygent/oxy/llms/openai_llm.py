@@ -83,7 +83,6 @@ class OpenAILLM(RemoteLLM):
                                     "agent": oxy_request.caller,
                                     "node_id": oxy_request.node_id,
                                 },
-                                "_is_stored": False,
                             }
                         )
                         answer += "<think>"
@@ -100,7 +99,6 @@ class OpenAILLM(RemoteLLM):
                                     "agent": oxy_request.caller,
                                     "node_id": oxy_request.node_id,
                                 },
-                                "_is_stored": False,
                             }
                         )
                         answer += "</think>"
@@ -116,9 +114,18 @@ class OpenAILLM(RemoteLLM):
                                 "agent": oxy_request.caller,
                                 "node_id": oxy_request.node_id,
                             },
-                            "_is_stored": False,
                         }
                     )
+            await oxy_request.send_message(
+                {
+                    "type": "stream_end",
+                    "content": {
+                        "delta": "",
+                        "agent": oxy_request.caller,
+                        "node_id": oxy_request.node_id,
+                    },
+                }
+            )
             return OxyResponse(state=OxyState.COMPLETED, output=answer)
         else:
             return OxyResponse(

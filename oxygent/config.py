@@ -68,6 +68,7 @@ class Config:
             "is_send_think": True,
             "is_send_answer": True,
             "is_stored": False,
+            "stream_batch_size": 256,
             "is_show_in_terminal": False,
             "is_send_full_arguments": False,
         },
@@ -358,6 +359,14 @@ class Config:
     @classmethod
     def get_message_is_stored(cls):
         return cls.get_module_config("message", "is_stored")
+
+    @classmethod
+    def set_message_stream_batch_size(cls, stream_batch_size=128):
+        cls.set_module_config("message", "stream_batch_size", stream_batch_size)
+
+    @classmethod
+    def get_message_stream_batch_size(cls):
+        return cls.get_module_config("message", "stream_batch_size")
 
     @classmethod
     def set_message_is_show_in_terminal(cls, is_show_in_terminal=True):

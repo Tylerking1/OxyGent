@@ -361,7 +361,7 @@ class OxyRequest(BaseModel):
             redis_key = (
                 f"{self.mas.message_prefix}:{self.mas.name}:{self.current_trace_id}"
             )
-            await self.mas.send_message(sse_message, redis_key)
+            await self.mas.send_message(sse_message, redis_key, group_id=self.group_id)
 
     def set_query(self, query, master_level=False):
         if master_level:

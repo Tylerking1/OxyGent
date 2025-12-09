@@ -39,8 +39,12 @@ def get_mac_address():
     return mac_address
 
 
-def get_timestamp():
+def get_timestamp_str():
     return str(datetime.now().timestamp())
+
+
+def get_timestamp():
+    return datetime.now().timestamp() * 1000
 
 
 def get_format_time():

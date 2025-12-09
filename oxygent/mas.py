@@ -46,6 +46,7 @@ from .schemas import OxyRequest, OxyResponse, SSEMessage, WebResponse
 from .utils.common_utils import (
     generate_uuid,
     get_format_time,
+    get_timestamp,
     msgpack_preprocess,
     print_tree,
     to_json,
@@ -99,6 +100,8 @@ class MAS(BaseModel):
 
     routers: list = Field(default_factory=list)
     middlewares: list = Field(default_factory=list)
+
+    stream_dict: dict[str, list] = Field(default_factory=dict)
 
     def __init__(self, **kwargs):
         """Construct a new :class:`MAS`.
@@ -284,9 +287,14 @@ class MAS(BaseModel):
                     "mappings": {
                         "properties": {
                             "message_id": {"type": "keyword"},
+                            "group_id": {"type": "keyword"},
                             "trace_id": {"type": "keyword"},
+                            "node_id": {"type": "keyword"},
+                            "node_name": {"type": "keyword"},
                             "message": {"type": "text"},
                             "message_type": {"type": "keyword"},
+                            "message_event": {"type": "keyword"},
+                            "message_timestamp": {"type": "long"},
                             "create_time": {
                                 "format": "yyyy-MM-dd HH:mm:ss.SSSSSSSSS",
                                 "type": "date",
@@ -566,7 +574,9 @@ class MAS(BaseModel):
         oxy_response = await oxy.execute(oxy_request)
         return oxy_response.output
 
-    async def send_message(self, sse_message: SSEMessage, redis_key: str):
+    async def send_message(
+        self, sse_message: SSEMessage, redis_key: str, group_id: str = ""
+    ):
         """Push *message* onto a capped Redis list.
 
         The data is MsgPack‑encoded before being stored.  At most **10** items
@@ -598,18 +608,78 @@ class MAS(BaseModel):
             parts = redis_key.split(":")
             current_trace_id = parts[-1] if len(parts) >= 3 else ""
 
-            # Insert into Elasticsearch
-            await self.es_client.index(
-                Config.get_app_name() + "_message",
-                doc_id=sse_message.id,
-                body={
-                    "message_id": sse_message.id,
-                    "trace_id": current_trace_id,
-                    "message": to_json(message),
-                    "message_type": message_type,
-                    "create_time": get_format_time(),
-                },
-            )
+            # 考虑 message 是 str 的情况
+            node_id = ""
+            node_name = ""
+            message_timestamp = get_timestamp()
+            if isinstance(message, dict):
+                message_timestamp = message.get("timestamp", get_timestamp())
+                if isinstance(message.get("content"), dict):
+                    node_id = message.get("content", {}).get("node_id", "")
+                    node_name = message.get("content", {}).get("agent", "")
+
+            if message_type in ["stream", "stream_end"]:
+                # 排队
+                if message_type == "stream":
+                    delta = message.get("content", {}).get("delta", "")
+                    if node_id not in self.stream_dict:
+                        self.stream_dict[node_id] = []
+                    self.stream_dict[node_id].append(delta)
+                if message_type == "stream_end" or (
+                    self.stream_dict[node_id]
+                    and len(self.stream_dict[node_id])
+                    % Config.get_message_stream_batch_size()
+                    == 0
+                ):
+                    message_id = generate_uuid()
+                    merged_type = "merged_stream"
+                    save_message_task = asyncio.create_task(
+                        self.es_client.index(
+                            Config.get_app_name() + "_message",
+                            doc_id=message_id,
+                            body={
+                                "message_id": message_id,
+                                "group_id": group_id,
+                                "trace_id": current_trace_id,
+                                "node_id": node_id,
+                                "node_name": node_name,
+                                "message": to_json(
+                                    {
+                                        "type": merged_type,
+                                        "content": "".join(self.stream_dict[node_id]),
+                                    }
+                                ),
+                                "message_type": merged_type,
+                                "message_event": sse_message.event,
+                                "message_timestamp": message_timestamp,
+                                "create_time": get_format_time(),
+                            },
+                        )
+                    )
+                    save_message_task.add_done_callback(self.background_tasks.discard)
+                    self.background_tasks.add(save_message_task)
+                    self.stream_dict[node_id].clear()
+            else:
+                save_message_task = asyncio.create_task(
+                    self.es_client.index(
+                        Config.get_app_name() + "_message",
+                        doc_id=sse_message.id,
+                        body={
+                            "message_id": sse_message.id,
+                            "group_id": group_id,
+                            "trace_id": current_trace_id,
+                            "node_id": node_id,
+                            "node_name": node_name,
+                            "message": to_json(message),
+                            "message_type": message_type,
+                            "message_event": sse_message.event,
+                            "message_timestamp": message_timestamp,
+                            "create_time": get_format_time(),
+                        },
+                    )
+                )
+                save_message_task.add_done_callback(self.background_tasks.discard)
+                self.background_tasks.add(save_message_task)
         if message_is_send:
             bytes_msg = msgpack.packb(msgpack_preprocess(sse_message.to_sse()))
             await self.redis_client.lpush(redis_key, bytes_msg)
@@ -745,7 +815,9 @@ class MAS(BaseModel):
 
             if send_msg_key:
                 await self.send_message(
-                    SSEMessage(event="close", data="done"), send_msg_key
+                    SSEMessage(event="close", data="done"),
+                    send_msg_key,
+                    group_id=oxy_request.group_id,
                 )
             return oxy_response
         except Exception:
