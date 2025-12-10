@@ -128,11 +128,14 @@ class HttpLLM(RemoteLLM):
                                 },
                             )
                         if use_openai:
-                            delta = chunk["choices"][0]["delta"].get(
-                                "content", ""
-                            ) or chunk["choices"][0]["delta"].get(
-                                "reasoning_content", ""
-                            )
+                            if chunk["choices"]:
+                                delta = chunk["choices"][0]["delta"].get(
+                                    "content", ""
+                                ) or chunk["choices"][0]["delta"].get(
+                                    "reasoning_content", ""
+                                )
+                            else:
+                                delta = ""
                         else:
                             delta = chunk.get("message", {}).get(
                                 "content", ""
