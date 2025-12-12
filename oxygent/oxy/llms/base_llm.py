@@ -79,6 +79,8 @@ class BaseLLM(Oxy):
         default=2 * 1024 * 1024,
         description="Maximum non-media file size (bytes) for base64 embedding.",
     )
+    base64_image_prefix: str = Field(default="data:image", description="")
+    base64_video_prefix: str = Field(default="data:video", description="")
     is_disable_system_prompt: bool = Field(default=False)
 
     async def _get_messages(self, oxy_request: OxyRequest):
@@ -170,11 +172,15 @@ class BaseLLM(Oxy):
 
                 if item_type == "image_url":
                     item[item_type]["url"] = await image_to_base64(
-                        item[item_type]["url"], self.max_image_pixels
+                        item[item_type]["url"],
+                        self.max_image_pixels,
+                        self.base64_image_prefix,
                     )
                 elif item_type == "video_url":
                     item[item_type]["url"] = await video_to_base64(
-                        item[item_type]["url"], self.max_video_size
+                        item[item_type]["url"],
+                        self.max_video_size,
+                        self.base64_video_prefix,
                     )
                 else:
                     logger.warning(

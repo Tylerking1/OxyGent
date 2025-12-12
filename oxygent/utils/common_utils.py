@@ -96,7 +96,9 @@ async def source_to_bytes(source: str):
             return await f.read()
 
 
-async def image_to_base64(source: str, max_image_pixels: int = 10000000) -> str:
+async def image_to_base64(
+    source: str, max_image_pixels: int = 10000000, base64_prefix="data:image"
+) -> str:
     image_bytes = await source_to_bytes(source)
 
     def process_image(image_bytes):
@@ -118,16 +120,18 @@ async def image_to_base64(source: str, max_image_pixels: int = 10000000) -> str:
             return output.getvalue()
 
     image_bytes = await asyncio.to_thread(process_image, image_bytes)
-    return f"data:image;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+    return f"{base64_prefix};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
 
 
 # 512 * 1024 * 1024 bytes == 512MB
-async def video_to_base64(source: str, max_video_size: int = 512 * 1024 * 1024) -> str:
+async def video_to_base64(
+    source: str, max_video_size: int = 512 * 1024 * 1024, base64_prefix="data:video"
+) -> str:
     video_bytes = await source_to_bytes(source)
     if len(video_bytes) > max_video_size:
         return source
     else:
-        return f"data:video;base64,{base64.b64encode(video_bytes).decode('utf-8')}"
+        return f"{base64_prefix};base64,{base64.b64encode(video_bytes).decode('utf-8')}"
 
 
 async def table_to_base64(source: str, max_table_size: int = 50 * 1024 * 1024) -> str:
