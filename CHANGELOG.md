@@ -9,6 +9,37 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.0.9.3] - 2025-12-12
+### Added
+- Added oxy.BaseLLM parameter to support custom multimodal base64 prefixes.
+- Added func_process_message method to the MAS class for unified message processing, refer to [./examples/backend/demo_process_message.py](./examples/backend/demo_process_message.py)
+
+### Fixed
+- When the send_msg_key parameter of the chat_with_agent function is empty, messages will not be sent.
+
+---
+
+## [1.0.9.2] - 2025-12-09
+### Added
+- Added stream_end message as an indicator for the end of streaming messages.
+- Stream messages now support batch storage.
+
+### Changed
+- Modified the structure of the message table, added new fields.
+
+---
+
+## [1.0.9.1] - 2025-12-04
+### Added
+- Added pre-logging of payloads for easier troubleshooting.
+- Standardized SSE message fields: id, event, data.
+- SSEOxyGent now forwards headers transparently.
+
+### Changed
+- When storing in the history table, the answer field in memory is forcibly converted to a string.
+
+---
+
 ## [1.0.8] - 2025-11-14
 
 ### Added

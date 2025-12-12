@@ -98,6 +98,10 @@ class MAS(BaseModel):
         lambda x: None, exclude=True, description="interceptor function"
     )
 
+    func_process_message: Optional[Callable] = Field(
+        lambda x, oxy_request: x, exclude=True, description="process message function"
+    )
+
     routers: list = Field(default_factory=list)
     middlewares: list = Field(default_factory=list)
 

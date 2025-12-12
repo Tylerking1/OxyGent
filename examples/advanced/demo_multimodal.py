@@ -11,6 +11,7 @@ oxy_space = [
         model_name=os.getenv("DEFAULT_VLM_MODEL_NAME"),
         is_multimodal_supported=True,  # 设置支持多模态
         is_convert_url_to_base64=True,  # 设置将图片链接转换为base64
+        base64_image_prefix="data:image/jpeg",  # 设置base64图片前缀
     ),
     oxy.ChatAgent(
         name="vision_agent",
