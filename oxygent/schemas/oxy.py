@@ -465,6 +465,24 @@ class OxyRequest(BaseModel):
         await self.send_message(message="done", event="close")
         self.mas.active_tasks[self.current_trace_id].cancel()
 
+    async def get_feedback_stream(self, channel_id=None):
+        if channel_id is None:
+            channel_id = self.current_trace_id
+        if channel_id not in self.mas.feedback_dict:
+            self.mas.feedback_dict[channel_id] = asyncio.Queue()
+            # 存储当前trace_id用到的所有channel_id
+            if self.current_trace_id not in self.mas.channel_id_dict:
+                self.mas.channel_id_dict[self.current_trace_id] = []
+            self.mas.channel_id_dict[self.current_trace_id].append(channel_id)
+        queue = self.mas.feedback_dict[channel_id]
+        while True:
+            data = await queue.get()
+            if not data:
+                queue.task_done()
+                break
+            yield data
+            queue.task_done()
+
 
 class OxyResponse(BaseModel):
     """Result of an oxy execution.

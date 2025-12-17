@@ -106,6 +106,8 @@ class MAS(BaseModel):
     middlewares: list = Field(default_factory=list)
 
     stream_dict: dict[str, list] = Field(default_factory=dict)
+    feedback_dict: dict[str, asyncio.Queue] = Field(default_factory=dict)
+    channel_id_dict: dict[str, list] = Field(default_factory=dict)
 
     def __init__(self, **kwargs):
         """Construct a new :class:`MAS`.
@@ -688,6 +690,11 @@ class MAS(BaseModel):
             bytes_msg = msgpack.packb(msgpack_preprocess(sse_message.to_sse()))
             await self.redis_client.lpush(redis_key, bytes_msg)
 
+    def clear_queues(self, trace_id):
+        for channel_id in self.channel_id_dict.get(trace_id, []):
+            if channel_id in self.feedback_dict:
+                del self.feedback_dict[channel_id]
+
     async def chat_with_agent(
         self,
         payload: dict = None,
@@ -829,6 +836,8 @@ class MAS(BaseModel):
         except Exception:
             logger.error(traceback.format_exc())
             raise
+        finally:
+            self.clear_queues(oxy_request.current_trace_id)
 
     # ------------------------------------------------------------------
     # Interactive CLI helper
@@ -1120,6 +1129,17 @@ class MAS(BaseModel):
                 lambda future: self.active_tasks.pop(current_trace_id, None)
             )
             self.active_tasks[current_trace_id] = task
+            return WebResponse().to_dict()
+
+        @app.api_route("/feedback", methods=["GET", "POST"])
+        async def feedback(request: Request):
+            payload = await request_to_payload(request)
+            channel_id = payload.get("channel_id", "")
+            if channel_id not in self.feedback_dict:
+                return WebResponse(code=400, message="illegal channel_id").to_dict()
+            queue = self.feedback_dict[channel_id]
+            data = payload.get("data", None)
+            await queue.put(data)
             return WebResponse().to_dict()
 
         async def run_uvicorn():

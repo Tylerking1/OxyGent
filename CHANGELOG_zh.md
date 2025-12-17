@@ -9,6 +9,13 @@
 
 ---
 
+## [1.0.10.1] - 2025-12-17
+
+### Added
+- 新增用户反馈接口/feedback，用于实现human-in-the-loop，详见 [./examples/backend/demo_human_in_the_loop.py](./examples/backend/demo_human_in_the_loop.py)
+
+---
+
 ## [1.0.9.3] - 2025-12-12
 
 ### Added
