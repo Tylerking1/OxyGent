@@ -22,7 +22,7 @@ oxy_space = [
 
 async def main():
     async with MAS(oxy_space=oxy_space) as mas:
-        await mas.start_web_service(first_query="这是什么？")
+        await mas.start_web_service(first_query="What is this?")
 
 
 async def test():
@@ -36,7 +36,7 @@ async def test():
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": "./test_pic.png"}},
-                    {"type": "text", "text": "这是什么？"},
+                    {"type": "text", "text": "What is this?"},
                 ],
             },
         ]

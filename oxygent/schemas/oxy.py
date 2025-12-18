@@ -12,6 +12,7 @@ NOTE: The variables difined in this file have meanings as:
 import asyncio
 import copy
 import logging
+import os
 import traceback
 from enum import Enum, auto
 from functools import partial
@@ -379,7 +380,10 @@ class OxyRequest(BaseModel):
             if attachment.startswith("../static/"):
                 attachment = f"{Config.get_cache_save_dir()}/uploads{attachment[9:]}"
             is_image_flag = "!" if is_image(attachment) else ""
-            md_attachments.append(f"{is_image_flag}[file {i + 1}]({attachment})")
+            attachment_base_name = os.path.basename(attachment)
+            md_attachments.append(
+                f"{is_image_flag}[{attachment_base_name}]({attachment})"
+            )
         attachments_str = "\n".join(md_attachments)
         if attachments_str:
             attachments_str += " "

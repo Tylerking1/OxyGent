@@ -67,12 +67,11 @@ def check_alive():
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    upload_dir = os.path.join(Config.get_cache_save_dir(), "uploads")
+    datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
+    upload_dir = os.path.join(Config.get_cache_save_dir(), "uploads", datetime_str)
     os.makedirs(upload_dir, exist_ok=True)
-
-    file_name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}"
-    file_path = os.path.join(upload_dir, file_name)
-    pic_url = f"../static/{file_name}"
+    file_path = os.path.join(upload_dir, file.filename)
+    pic_url = f"../static/{datetime_str}/{file.filename}"
 
     # Save file asynchronously
     async with aiofiles.open(file_path, "wb") as f:
@@ -278,11 +277,13 @@ async def call(item: Item):
 
         # Validate required field exists
         if "class_name" not in item.class_attr:
-            return WebResponse(code=400, message="Missing required field: class_name").to_dict()
-            
+            return WebResponse(
+                code=400, message="Missing required field: class_name"
+            ).to_dict()
+
         # Set required name field
         item.class_attr["name"] = item.class_attr["class_name"].lower()
-        
+
         # Type conversion for LLM parameters
         llm_params_type_dict = {
             "temperature": float,
@@ -294,16 +295,19 @@ async def call(item: Item):
                 try:
                     item.class_attr["llm_params"][k] = llm_params_type_dict[k](v)
                 except (ValueError, TypeError) as e:
-                    return WebResponse(code=400, message=f"Invalid parameter {k}: {str(e)}").to_dict()
-        
+                    return WebResponse(
+                        code=400, message=f"Invalid parameter {k}: {str(e)}"
+                    ).to_dict()
+
         # Create Oxy instance with security checks and execute
         oxy = OxyFactory.create_oxy(item.class_attr["class_name"], **item.class_attr)
         oxy_response = await oxy.execute(OxyRequest(arguments=item.arguments))
         return WebResponse(data={"output": oxy_response.output}).to_dict()
     except SecurityError as e:
-        logger.warning(f"Security check failed: {str(e)}", extra={
-            "class_name": item.class_attr.get("class_name", "unknown")
-        })
+        logger.warning(
+            f"Security check failed: {str(e)}",
+            extra={"class_name": item.class_attr.get("class_name", "unknown")},
+        )
         return WebResponse(code=403, message=f"Security error: {str(e)}").to_dict()
     except Exception:
         error_msg = traceback.format_exc()

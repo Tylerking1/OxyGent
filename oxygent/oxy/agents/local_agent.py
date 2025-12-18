@@ -173,7 +173,7 @@ class LocalAgent(BaseAgent):
         ].is_multimodal_supported
         if self.is_multimodal_supported:
             self.input_schema["properties"]["query"]["description"] = (
-                "The image path and the query to ask about the images, for example: ![file 1](image1.png) ![file 2](image2.png) What are file 1 and file 2, respectively?"
+                "The image path and the query to ask about the images, for example: ![image1.png](./static/image1.png) ![image2.png](./static/image2.png) What are image1.png and image2.png, respectively?"
             )
 
         await super().init()
