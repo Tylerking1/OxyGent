@@ -725,7 +725,7 @@ class MAS(BaseModel):
                 await self.redis_client.lpush(redis_key, bytes_msg)
                 # Message sent successfully, reset retry attempts
                 self.reset_retry_attempt(redis_key)
-                logger.info(f"Message sent successfully for {redis_key}, retry attempts reset")
+                # logger.info(f"Message sent successfully for {redis_key}, retry attempts reset")
             except Exception as e:
                 # Message sending failed, increment retry attempts
                 retry_attempt = self.increment_retry_attempt(redis_key)
