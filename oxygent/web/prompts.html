@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Prompt Manager - OxyGent</title>
+    <link rel="shortcut icon" href="./image/group-favicon.png" type="image/x-icon">
+
+    <!-- Critical CSS - Inlined for faster initial load -->
+    <style>
+        :root{--primary:#4f46e5;--primary-hover:#4338ca;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--info:#06b6d4;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;--gray-900:#111827;--shadow:0 1px 3px rgba(0,0,0,.1);--shadow-lg:0 4px 6px rgba(0,0,0,.1);--shadow-xl:0 10px 25px rgba(0,0,0,.15);--radius:8px;--radius-lg:12px;--transition:all .2s ease}
+        *,::before,::after{box-sizing:border-box}
+        body{font:400 16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--gray-50);margin:0;color:var(--gray-800);-webkit-font-smoothing:antialiased}
+        .header{background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:1.5rem 0;box-shadow:var(--shadow-lg);position:sticky;top:0;z-index:100}
+        .header-content{max-width:1200px;margin:0 auto;padding:0 1.25rem;display:flex;justify-content:space-between;align-items:center}
+        .header h1{margin:0;font:700 1.75rem/1 inherit;letter-spacing:-.025em}
+        .loading{text-align:center;padding:5rem 1.25rem;color:var(--gray-500)}
+        .loading-spinner{width:48px;height:48px;border:4px solid var(--gray-200);border-top:4px solid var(--primary);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 1.5rem}
+        @keyframes spin{to{transform:rotate(360deg)}}
+    </style>
+
+    <!-- Preload critical resources -->
+    <link rel="preload" href="./css/normalize.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="./css/main.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="./css/prompt-manager.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+
+    <!-- Fallback for non-JS users -->
+    <noscript>
+        <link href="./css/normalize.css" rel="stylesheet">
+        <link href="./css/main.css" rel="stylesheet">
+        <link href="./css/prompt-manager.css" rel="stylesheet">
+    </noscript>
+
+    <!-- Non-critical CSS - Load asynchronously -->
+    <link href="./css/normalize.css" rel="stylesheet" media="print" onload="this.media='all'">
+    <link href="./css/main.css" rel="stylesheet" media="print" onload="this.media='all'">
+    <link href="./css/prompt-manager.css" rel="stylesheet" media="print" onload="this.media='all'">
+
+    <!-- Preload JavaScript -->
+    <link rel="preload" href="./js/prompt-manager.js" as="script">
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>🚀 Live Prompt Manager</h1>
+            <div class="header-actions">
+                <a href="/" class="btn btn-secondary">
+                    🏠 Home
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 操作栏 -->
+        <div class="actions-bar">
+            <div class="actions-left">
+                <!-- 移除了Auto-Register和Refresh按钮，只保留核心功能 -->
+            </div>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search prompts..." onkeyup="handleSearch(event)">
+                <span class="search-icon">🔍</span>
+            </div>
+        </div>
+
+        <!-- 提示词列表 -->
+        <div id="promptsList" class="prompts-grid">
+            <!-- 动态加载内容 -->
+        </div>
+    </div>
+
+    <!-- 编辑提示词模态框 -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Prompt</h2>
+                <button class="close" onclick="hideEditModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form">
+                    <div class="form-group">
+                        <label for="edit_prompt_key">Prompt Key</label>
+                        <input type="text" id="edit_prompt_key" class="form-control" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_prompt_content">Prompt Content</label>
+                        <textarea id="edit_prompt_content" class="form-control" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_is_active">Status</label>
+                        <div class="switch-container">
+                            <label class="switch">
+                                <input type="checkbox" id="edit_is_active">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="switch-label">Active</span>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideEditModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="savePrompt()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 版本预览模态框 -->
+    <div id="preview-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Version Preview</h2>
+                <button class="close" onclick="hidePreviewModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="preview-info">
+                    <div class="preview-meta">
+                        <span class="preview-version" id="preview-version-info"></span>
+                        <span class="preview-date" id="preview-date-info"></span>
+                    </div>
+                    <div class="preview-stats" id="preview-stats"></div>
+                </div>
+                <div class="preview-content-container">
+                    <div class="preview-content-header">
+                        <h4>Prompt Content</h4>
+                        <div class="preview-actions">
+                            <button class="btn btn-sm btn-secondary" onclick="copyPreviewContent()">
+                                📋 Copy
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="togglePreviewMode()">
+                                🔍 Toggle View
+                            </button>
+                        </div>
+                    </div>
+                    <div class="preview-content" id="preview-content">
+                        <!-- Version content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hidePreviewModal()">Close</button>
+                <button type="button" class="btn btn-warning" id="preview-rollback-btn">
+                    ↩️ Rollback to This Version
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 版本历史模态框 -->
+    <div id="history-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Version History</h2>
+                <button class="close" onclick="hideHistoryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="version-list" class="version-history">
+                    <!-- 动态加载版本历史 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideHistoryModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load jQuery asynchronously -->
+    <script>
+        // Minimal jQuery fallback if needed for legacy compatibility
+        if (!window.$) {
+            const script = document.createElement('script');
+            script.src = 'https://code.jquery.com/jquery-3.6.0.min.js';
+            script.async = true;
+            document.head.appendChild(script);
+        }
+    </script>
+
+    <!-- Main JavaScript - Optimized loading -->
+    <script src="./js/prompt-manager.js" defer></script>
+</body>
+</html>

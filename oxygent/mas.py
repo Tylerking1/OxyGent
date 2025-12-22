@@ -130,6 +130,15 @@ class MAS(BaseModel):
 
     async def __aenter__(self):
         await self.init()
+
+        # Register this MAS instance globally for API access
+        try:
+            from .routes import set_global_mas_instance
+            set_global_mas_instance(self)
+            logger.info("Registered MAS instance globally for API access")
+        except Exception as e:
+            logger.warning(f"Failed to register MAS instance globally: {e}")
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -222,6 +231,14 @@ class MAS(BaseModel):
         # Build the agent organization structure
         self.init_agent_organization()
         self.show_org()
+
+        # Setup dynamic agents for live prompt management
+        try:
+            from .live_prompt import setup_dynamic_agents
+            await setup_dynamic_agents(self)
+            logger.info("🔧 Dynamic agent management initialized")
+        except Exception as e:
+            logger.warning(f"Failed to setup dynamic agents: {e}")
 
     async def cleanup_servers(self) -> None:
         """Gracefully shut down remote servers/clients.
@@ -1040,6 +1057,38 @@ class MAS(BaseModel):
                     if self.welcome_message
                     else ""
                 }
+            ).to_dict()
+
+        @app.get("/get_agents")
+        def get_agents():
+            """Get detailed agent information for frontend display."""
+            agents = []
+
+            def extract_agents(node):
+                """Recursively extract agent information from organization tree."""
+                if isinstance(node, dict):
+                    if node.get("type") == "agent":
+                        # Extract agent details
+                        agent_info = {
+                            "name": node.get("name", ""),
+                            "desc": node.get("desc", ""),
+                            "type": node.get("type", "agent"),
+                            "path": node.get("path", [])
+                        }
+                        agents.append(agent_info)
+
+                    # Process children
+                    children = node.get("children", [])
+                    if isinstance(children, list):
+                        for child in children:
+                            extract_agents(child)
+
+            # Extract agents from organization structure
+            if hasattr(self, 'agent_organization') and self.agent_organization:
+                extract_agents(self.agent_organization)
+
+            return WebResponse(
+                data={"agents": agents}
             ).to_dict()
 
         async def request_to_payload(request: Request):

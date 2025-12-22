@@ -80,6 +80,9 @@ class JesEs(BaseEs):
     async def exists(self, index_name, doc_id):
         return await self.client.exists(index=index_name, id=doc_id)
 
+    async def delete(self, index_name, doc_id):
+        return await self.client.delete(index=index_name, id=doc_id)
+
     async def close(self):
         return await self.client.close()
 

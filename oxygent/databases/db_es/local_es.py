@@ -328,5 +328,33 @@ class LocalEs(BaseEs):
 
             return {"_id": target_doc_id, "result": "updated"}
 
+    async def delete(self, index_name: str, doc_id: str) -> dict[str, str]:
+        """Delete a document from the index.
+
+        Args:
+            index_name: Name of the index
+            doc_id: ID of the document to delete
+
+        Returns:
+            Result of the delete operation
+        """
+        data_path = self._index_path(index_name)
+        backup_path = f"{data_path}.bak"
+
+        lock = self._locks.setdefault(index_name, asyncio.Lock())
+        async with lock:
+            data = await self._read_json_safe(data_path) or {}
+
+            if doc_id not in data:
+                return {"_id": doc_id, "result": "not_found"}
+
+            del data[doc_id]
+
+            if await aiofiles.os.path.exists(data_path):
+                await aiofiles.os.replace(data_path, backup_path)
+            await self._write_json_atomic(data_path, data)
+
+            return {"_id": doc_id, "result": "deleted"}
+
     async def close(self) -> bool:  # noqa: D401 – nothing to clean
         return True
