@@ -108,7 +108,6 @@ class MAS(BaseModel):
     stream_dict: dict[str, list] = Field(default_factory=dict)
     feedback_dict: dict[str, asyncio.Queue] = Field(default_factory=dict)
     channel_id_dict: dict[str, list] = Field(default_factory=dict)
-    retry_attempts: dict[str, int] = Field(default_factory=dict)
 
     def __init__(self, **kwargs):
         """Construct a new :class:`MAS`.
@@ -581,21 +580,6 @@ class MAS(BaseModel):
         oxy_response = await oxy.execute(oxy_request)
         return oxy_response.output
 
-    def get_retry_attempt(self, redis_key: str) -> int:
-        """Get the current retry attempt count for a given redis key."""
-        return self.retry_attempts.get(redis_key, 0)
-
-    def increment_retry_attempt(self, redis_key: str) -> int:
-        """Increment the retry attempt count for a given redis key."""
-        current_attempt = self.retry_attempts.get(redis_key, 0)
-        self.retry_attempts[redis_key] = current_attempt + 1
-        return self.retry_attempts[redis_key]
-
-    def reset_retry_attempt(self, redis_key: str):
-        """Reset the retry attempt count for a given redis key."""
-        if redis_key in self.retry_attempts:
-            del self.retry_attempts[redis_key]
-
     async def send_message(
         self, sse_message: SSEMessage, redis_key: str, group_id: str = ""
     ):
@@ -603,9 +587,6 @@ class MAS(BaseModel):
 
         The data is MsgPack‑encoded before being stored.  At most **10** items
         are kept to bound memory usage for long‑running SSE connections.
-        
-        Implements exponential backoff retry mechanism using the retry field
-        in SSEMessage for dynamic retry interval control.
 
         Args:
             message: Any serialisable Python object.
@@ -614,20 +595,6 @@ class MAS(BaseModel):
         message = sse_message.data
         if Config.get_message_is_show_in_terminal():
             logger.info(f"--- Send Message ---: {sse_message.to_sse()}")
-
-        # Exponential backoff retry logic
-        retry_attempt = self.get_retry_attempt(redis_key)
-        if retry_attempt > 0:
-            # Calculate exponential backoff: base_retry * (2 ^ attempt)
-            base_retry = 1000  # 1 second base retry time
-            exponential_retry = base_retry * (2 ** retry_attempt)
-            # Cap the maximum retry time at 30 seconds
-            max_retry = 30000
-            sse_message.retry = min(exponential_retry, max_retry)
-            logger.info(f"Retry attempt {retry_attempt} for {redis_key}, setting retry interval to {sse_message.retry}ms")
-        
-        # Set the retry attempt on the message for potential external use
-        sse_message._retry_attempt = retry_attempt
 
         message_type = ""
         message_is_stored = Config.get_message_is_stored()
@@ -720,17 +687,8 @@ class MAS(BaseModel):
                 save_message_task.add_done_callback(self.background_tasks.discard)
                 self.background_tasks.add(save_message_task)
         if message_is_send:
-            try:
-                bytes_msg = msgpack.packb(msgpack_preprocess(sse_message.to_sse()))
-                await self.redis_client.lpush(redis_key, bytes_msg)
-                # Message sent successfully, reset retry attempts
-                self.reset_retry_attempt(redis_key)
-                # logger.info(f"Message sent successfully for {redis_key}, retry attempts reset")
-            except Exception as e:
-                # Message sending failed, increment retry attempts
-                retry_attempt = self.increment_retry_attempt(redis_key)
-                logger.warning(f"Failed to send message for {redis_key}, attempt {retry_attempt}: {e}")
-                raise
+            bytes_msg = msgpack.packb(msgpack_preprocess(sse_message.to_sse()))
+            await self.redis_client.lpush(redis_key, bytes_msg)
 
     def clear_queues(self, trace_id):
         for channel_id in self.channel_id_dict.get(trace_id, []):
