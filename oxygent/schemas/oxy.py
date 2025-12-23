@@ -355,9 +355,9 @@ class OxyRequest(BaseModel):
     async def start(self) -> "OxyResponse":
         return await self.get_oxy(self.callee).execute(self)
 
-    async def send_message(self, message=None, event=None, id=None):
+    async def send_message(self, message=None, event=None, id=None, retry=None):
         if self.mas and self.is_send_message:
-            dict_message = {"id": id, "event": event, "data": message}
+            dict_message = {"id": id, "event": event, "data": message, "retry": retry}
             dict_message_processed = self.mas.func_process_message(dict_message, self)
             dict_message_filtered = {
                 k: v for k, v in dict_message_processed.items() if v is not None
