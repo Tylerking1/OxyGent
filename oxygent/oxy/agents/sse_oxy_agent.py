@@ -8,6 +8,7 @@ from pydantic import Field
 
 from ...schemas import OxyRequest, OxyResponse, OxyState
 from ...utils.common_utils import build_url
+from ...utils.sse_utils import iter_sse_events
 from .remote_agent import RemoteAgent
 
 logger = logging.getLogger(__name__)
@@ -101,77 +102,56 @@ class SSEOxyGent(RemoteAgent):
                                 status=resp.status
                             )
                         
-                        message_id = None
-                        message_event = None
-                        message_data = None
-                        message_retry = None
+                        # 使用规范的 SSE 事件解析
+                        async for event in iter_sse_events(resp):
+                            message_event = event.get("event")
+                            message_data = event.get("data")
+                            message_id = event.get("id")
+                            message_retry = event.get("retry")
 
-                        async for line in resp.content:
-                            line = line.decode("utf-8").strip()
-
-                            if line.startswith("id:"):
-                                message_id = line[3:].strip()
-                            elif line.startswith("event:"):
-                                message_event = line[6:].strip()
-                            elif line.startswith("data:"):
-                                message_data = line[5:].strip()
-                            elif line.startswith("retry:"):               
+                            if message_event == "close":
+                                logger.info(
+                                    f"Received request to terminate SSE connection: {message_data}. {self.server_url}",
+                                    extra={
+                                        "trace_id": oxy_request.current_trace_id,
+                                        "node_id": oxy_request.node_id,
+                                    },
+                                )
+                                await resp.release()
+                                return OxyResponse(state=OxyState.COMPLETED, output=answer)
+                            else:
                                 try:
-                                    message_retry = int(line[6:].strip())
-                                except ValueError:
-                                    message_retry = None
-
-                            # 当到达一个完整的事件时，处理它
-                            if line == "":
-                                if message_event == "close":
-                                    logger.info(
-                                        f"Received request to terminate SSE connection: {message_data}. {self.server_url}",
-                                        extra={
-                                            "trace_id": oxy_request.current_trace_id,
-                                            "node_id": oxy_request.node_id,
-                                        },
-                                    )
-                                    await resp.release()
-                                    return OxyResponse(state=OxyState.COMPLETED, output=answer)
-                                else:
-                                    try:
-                                        data = json.loads(message_data)
-                                        message_data_type = data.get("type", "")
-                                        if message_data_type == "answer":
-                                            answer = data.get("content")
-                                        elif message_data_type in [
-                                            "tool_call",
-                                            "observation",
-                                        ]:
-                                            if (
-                                                data["content"]["caller_category"] == "user"
-                                                or data["content"]["callee_category"] == "user"
-                                            ):
-                                                continue
-                                            else:
-                                                # Discord user and callee
-                                                if not self.is_share_call_stack:
-                                                    data["content"]["call_stack"] = (
-                                                        oxy_request.call_stack
-                                                        + data["content"]["call_stack"][2:]
-                                                    )
-                                                await oxy_request.send_message(
-                                                    data, event=message_event, id=message_id, retry=message_retry
-                                                )
+                                    data = json.loads(message_data)
+                                    message_data_type = data.get("type", "")
+                                    if message_data_type == "answer":
+                                        answer = data.get("content")
+                                    elif message_data_type in [
+                                        "tool_call",
+                                        "observation",
+                                    ]:
+                                        if (
+                                            data["content"]["caller_category"] == "user"
+                                            or data["content"]["callee_category"] == "user"
+                                        ):
+                                            continue
                                         else:
+                                            # Discord user and callee
+                                            if not self.is_share_call_stack:
+                                                data["content"]["call_stack"] = (
+                                                    oxy_request.call_stack
+                                                    + data["content"]["call_stack"][2:]
+                                                )
                                             await oxy_request.send_message(
                                                 data, event=message_event, id=message_id, retry=message_retry
                                             )
-                                    except json.JSONDecodeError:
+                                    else:
                                         await oxy_request.send_message(
                                             data, event=message_event, id=message_id, retry=message_retry
                                         )
-
-                                # 重置变量以准备下一个事件
-                                message_id = None
-                                message_event = None
-                                message_data = None
-                                message_retry = None
+                                except json.JSONDecodeError:
+                                    await oxy_request.send_message(
+                                        data, event=message_event, id=message_id, retry=message_retry
+                                    )
                                 
                         # 如果正常完成，直接返回
                         return OxyResponse(state=OxyState.COMPLETED, output=answer)
