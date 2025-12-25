@@ -1,7 +1,8 @@
+import asyncio
 import logging
 import os
 
-from elasticsearch import AsyncElasticsearch
+from elasticsearch import Elasticsearch
 
 from .base_es import BaseEs
 
@@ -11,12 +12,16 @@ logger = logging.getLogger(__name__)
 class JesEs(BaseEs):
     def __init__(self, hosts, user, password, maxsize=200, timeout=20):
         try:
-            self.client = AsyncElasticsearch(
+            self.client = Elasticsearch(
                 hosts, http_auth=(user, password), maxsize=maxsize, timeout=timeout
             )
         except Exception as e:
             logger.error(e)
             self.client = None
+
+    async def _run_sync(self, func, *args, **kwargs):
+        """Run a synchronous function in a separate thread."""
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     async def create_index(self, index_name: str, body: dict) -> dict:
         """Create a new index in Elasticsearch with the specified configuration.
@@ -54,7 +59,7 @@ class JesEs(BaseEs):
         Returns:
             bool: If the index exists
         """
-        return await self.client.indices.exists(index=index_name)
+        return await self._run_sync(self.client.indices.exists, index=index_name)
 
     async def _create_new_index(self, index_name: str, body: dict) -> dict:
         """Create new index.
@@ -66,25 +71,31 @@ class JesEs(BaseEs):
         Returns:
             dict: The result of the create operation
         """
-        return await self.client.indices.create(index=index_name, body=body)
+        return await self._run_sync(
+            self.client.indices.create, index=index_name, body=body
+        )
 
     async def index(self, index_name, doc_id, body):
-        return await self.client.index(index=index_name, id=doc_id, body=body)
+        return await self._run_sync(
+            self.client.index, index=index_name, id=doc_id, body=body
+        )
 
     async def update(self, index_name, doc_id, body):
-        return await self.client.update(index=index_name, id=doc_id, body={"doc": body})
+        return await self._run_sync(
+            self.client.update, index=index_name, id=doc_id, body={"doc": body}
+        )
 
     async def search(self, index_name, body):
-        return await self.client.search(index=index_name, body=body)
+        return await self._run_sync(self.client.search, index=index_name, body=body)
 
     async def exists(self, index_name, doc_id):
-        return await self.client.exists(index=index_name, id=doc_id)
+        return await self._run_sync(self.client.exists, index=index_name, id=doc_id)
 
     async def delete(self, index_name, doc_id):
-        return await self.client.delete(index=index_name, id=doc_id)
+        return await self._run_sync(self.client.delete, index=index_name, id=doc_id)
 
     async def close(self):
-        return await self.client.close()
+        return await self._run_sync(self.client.close)
 
 
 async def main():
@@ -92,19 +103,19 @@ async def main():
     user = os.getenv("ES_TEST_USER")
     password = os.getenv("ES_TEST_PASSWORD")
 
-    redis = JesEs(hosts, user, password)
+    es = JesEs(hosts, user, password)
     index_name = "mas_doc_test"
 
     print(
-        await redis.index(
+        await es.index(
             index_name, doc_id="doc1", body={"title": "Hello", "content": "World"}
         )
     )
-    print(await redis.search(index_name, {"query": {"match": {"title": "Hello"}}}))
-    print(await redis.exists(index_name, doc_id="doc1"))
+    print(await es.search(index_name, {"query": {"match": {"title": "Hello"}}}))
+    print(await es.exists(index_name, doc_id="doc1"))
     print(
-        await redis.update(
+        await es.update(
             index_name, doc_id="doc1", body={"title": "Hello", "content": "World!"}
         )
     )
-    await redis.close()
+    await es.close()

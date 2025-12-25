@@ -36,6 +36,10 @@ limitations under the License. -->
     <h3 align="center">
       Visit our website:
       <a href="http://oxygent.jd.com">OxyGent</a>
+      ｜Open Source:
+      <a href="https://github.com/jd-opensource/OxyGent">Python</a>
+      or
+      <a href="https://github.com/jd-opensource/JDOxyGent4J">Java</a>
     </h3>
 </html>
 
@@ -193,7 +197,7 @@ There are several ways you can contribute to OxyGent:
     - Send your pull request
 
 We appreciate all kinds of contributions! 🎉🎉🎉
-If you have problems about development, please check our document: * **[Document](http://oxygent.jd.com/docs/)**
+If you have problems about development, please check our document: **[Document](http://oxygent.jd.com/docs/)**
 
 ## 7. Community & Support
 If you encounter any issues along the way, you are welcomed to submit reproducible steps and log snippets in the project's Issues area, or contact the OxyGent Core team directly via your internal Slack.

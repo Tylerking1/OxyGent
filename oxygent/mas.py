@@ -887,55 +887,74 @@ class MAS(BaseModel):
     # FastAPI + SSE web service (unedited original docstring preserved)
     # ------------------------------------------------------------------
 
+    async def _process_redis_messages(self, redis_key, current_trace_id):
+        while True:
+            bytes_msg = await self.redis_client.rpop(redis_key)
+            if bytes_msg is None:
+                await asyncio.sleep(0.1)
+                continue
+            sse_message_dict = msgpack.unpackb(bytes_msg)
+            if sse_message_dict:
+                if sse_message_dict.get("event", "message") == "close":
+                    yield sse_message_dict
+                    logger.info(
+                        "SSE connection terminated.",
+                        extra={"trace_id": current_trace_id},
+                    )
+                    break
+                # Convert before sending message: Use msg.content.arguments.query
+
+                message = sse_message_dict.get("data", {})
+                if isinstance(message, dict):
+                    if message.get("type", "") == "tool_call" and isinstance(
+                        message.get("content", {})
+                        .get("arguments", {})
+                        .get("query", ""),
+                        list,
+                    ):
+                        for msg in message["content"]["arguments"]["query"]:
+                            if msg.get("type") == "text":
+                                message["content"]["arguments"]["query"] = msg.get(
+                                    "text", ""
+                                )
+                                break
+                    if message.get("type", "") == "observation":
+                        message["content"]["output"] = to_json(
+                            message["content"]["output"]
+                        )
+                    sse_message_dict["data"] = message
+                # Send message
+                yield sse_message_dict
+
     async def event_stream(self, redis_key, current_trace_id, task):
         try:
             task.add_done_callback(
                 lambda future: self.active_tasks.pop(current_trace_id, None)
             )
             self.active_tasks[current_trace_id] = task
-            while True:
-                bytes_msg = await self.redis_client.rpop(redis_key)
-                if bytes_msg is None:
-                    await asyncio.sleep(0.1)
-                    continue
-                sse_message_dict = msgpack.unpackb(bytes_msg)
-                if sse_message_dict:
-                    if sse_message_dict.get("event", "message") == "close":
-                        yield sse_message_dict
-                        logger.info(
-                            "SSE connection terminated.",
-                            extra={"trace_id": current_trace_id},
-                        )
-                        break
-                    # Convert before sending message: Use msg.content.arguments.query
-
-                    message = sse_message_dict.get("data", {})
-                    if isinstance(message, dict):
-                        if message.get("type", "") == "tool_call" and isinstance(
-                            message.get("content", {})
-                            .get("arguments", {})
-                            .get("query", ""),
-                            list,
-                        ):
-                            for msg in message["content"]["arguments"]["query"]:
-                                if msg.get("type") == "text":
-                                    message["content"]["arguments"]["query"] = msg.get(
-                                        "text", ""
-                                    )
-                                    break
-                        if message.get("type", "") == "observation":
-                            message["content"]["output"] = to_json(
-                                message["content"]["output"]
-                            )
-                        sse_message_dict["data"] = message
-                    # Send message
-                    yield sse_message_dict
+            async for message in self._process_redis_messages(
+                redis_key, current_trace_id
+            ):
+                yield message
         except asyncio.CancelledError:
             logger.info(
                 "SSE connection terminated.",
                 extra={"trace_id": current_trace_id},
             )
             self.active_tasks[current_trace_id].cancel()
+            raise
+
+    async def yield_async_message(self, redis_key, current_trace_id):
+        try:
+            async for message in self._process_redis_messages(
+                redis_key, current_trace_id
+            ):
+                yield message
+        except asyncio.CancelledError:
+            logger.info(
+                "SSE connection terminated.",
+                extra={"trace_id": current_trace_id},
+            )
             raise
 
     async def start_web_service(
@@ -1180,6 +1199,23 @@ class MAS(BaseModel):
             )
             self.active_tasks[current_trace_id] = task
             return WebResponse().to_dict()
+
+        @app.api_route("/async/trace", methods=["GET", "POST"])
+        async def async_trace(request: Request):
+            payload = await request_to_payload(request)
+            # Apply request interceptor if configured
+            intercepted_response = self.func_interceptor(payload)
+            if intercepted_response is not None:
+                return intercepted_response
+            trace_id = payload["trace_id"]
+            timestamp = payload["timestamp"]
+
+            logger.info(
+                "SSE connection established.",
+                extra={"trace_id": trace_id, "timestamp": timestamp},
+            )
+            redis_key = f"{self.message_prefix}:{self.name}:{trace_id}"
+            return EventSourceResponse(self.yield_async_message(redis_key, trace_id))
 
         @app.api_route("/feedback", methods=["GET", "POST"])
         async def feedback(request: Request):

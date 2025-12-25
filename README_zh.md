@@ -35,7 +35,11 @@ limitations under the License. -->
     </h3>
     <h3 align="center">
       访问官方网站:
-      <a href="http://oxygent.jd.com">OxyGent</a> 
+      <a href="http://oxygent.jd.com">OxyGent</a>
+      ｜开源仓库:
+      <a href="https://github.com/jd-opensource/OxyGent">Python</a>
+      or
+      <a href="https://github.com/jd-opensource/JDOxyGent4J">Java</a>
     </h3>
 </html>
 
@@ -195,7 +199,7 @@ OxyGent最新版本 (July 9, 2025) 在[GAIA](https://huggingface.co/spaces/gaia-
     - 提出pull request
 
 感谢您的贡献！ 🎉🎉🎉
-如果您在开发中遇到问题，请参阅**[OxyGent中文指南](./docs/docs_zh/readme.md)** 或者**[OxyGent 文档](http://oxygent.jd.com/docs/)**
+如果您在开发中遇到问题，请参阅 [OxyGent中文指南](./docs/docs_zh/readme.md) 或者 [OxyGent 文档](http://oxygent.jd.com/docs/)
 
 ## 7. 社区支持
 如果你在OxyGent的开发或使用过程中遇到任何问题，欢迎在项目的Issue区域提交可复现的步骤或日志片段。
