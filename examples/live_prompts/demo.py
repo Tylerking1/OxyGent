@@ -14,7 +14,7 @@ oxy_space = [
         model_name=os.getenv("DEFAULT_LLM_MODEL_NAME"),
     ),
     preset_tools.time_tools,
-    # use system default prompt when code prompt is empty
+    # 使用系统默认提示词
     oxy.ReActAgent(
         name="time_agent",
         desc="A tool that can query the time",
@@ -24,7 +24,7 @@ oxy_space = [
     ),
     preset_tools.file_tools,
 
-    # use code prompt as fallback when live prompt not exist
+    # 只使用代码中的提示词
     oxy.ReActAgent(
         name="file_agent",
         desc="A tool that can operate the file system",
@@ -34,13 +34,14 @@ oxy_space = [
     ),
     preset_tools.math_tools,
 
-    # 使用 动态提示词 功能
+    # 使用 动态提示词
     oxy.ReActAgent(
         name="math_agent",
         desc="A tool that can perform mathematical calculations.",
         tools=["math_tools"],
         prompt="You are a math assistant. Help users with mathematical calculations.",
     ),
+     # 使用 动态提示词
     oxy.ReActAgent(
         is_master=True,
         name="master_agent",
