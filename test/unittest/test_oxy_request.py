@@ -40,6 +40,7 @@ class DummyOxy:
         self._succeed = succeed
         self._delay = delay
         self.retries = 3
+        self.system_args = []
 
     async def execute(self, req: OxyRequest):
         if self._delay:
