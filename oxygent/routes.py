@@ -421,6 +421,7 @@ class PromptUpdateRequest(BaseModel):
     category: Optional[str] = None
     agent_type: Optional[str] = None
     tags: Optional[List[str]] = None
+    is_active: Optional[bool] = None
 
 
 class PromptResponse(BaseModel):
@@ -479,7 +480,8 @@ async def get_prompt(prompt_key: str):
     try:
         from .live_prompt import get_prompt_manager
         manager = await get_prompt_manager()
-        prompt = await manager.get_prompt(prompt_key)
+        # Use cache to get latest data (cache is updated immediately on save)
+        prompt = await manager.get_prompt(prompt_key, use_cache=True)
 
         if not prompt:
             raise HTTPException(status_code=404, detail="Prompt not found")
@@ -504,8 +506,8 @@ async def create_prompt(request: PromptCreateRequest):
         from .live_prompt import get_prompt_manager
         manager = await get_prompt_manager()
 
-        # Check if already exists
-        existing = await manager.get_prompt(request.prompt_key)
+        # Check if already exists (use cache for consistency)
+        existing = await manager.get_prompt(request.prompt_key, use_cache=True)
         if existing:
             raise HTTPException(status_code=400, detail="Prompt already exists")
 
@@ -541,9 +543,9 @@ async def update_prompt(prompt_key: str, request: PromptUpdateRequest):
     try:
         from .live_prompt import get_prompt_manager, hot_reload_prompt
         manager = await get_prompt_manager()
-
-        # Get existing prompt
-        existing = await manager.get_prompt(prompt_key)
+        
+        # Get existing prompt (use cache for cache-first strategy)
+        existing = await manager.get_prompt(prompt_key, use_cache=True)
         if not existing:
             raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -577,28 +579,17 @@ async def update_prompt(prompt_key: str, request: PromptUpdateRequest):
         success = await manager.save_prompt(
             prompt_key=prompt_key,
             **update_data,
-            version=existing.get("version", 1),
+            is_active=request.is_active if request.is_active is not None else existing.get("is_active", True),
             created_by=existing.get("created_by", "user")
         )
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update prompt")
 
-        # Auto-trigger hot reload if content changed
         hot_reload_success = False
         if request.prompt_content is not None:
-            # Note: save_prompt already updated the cache with new content
-            # No need to delete it, hot_reload will handle cache refresh
-            
-            # Debug: Log agent mapping (only in debug mode)
-            if logger.isEnabledFor(logging.DEBUG):
-                from .live_prompt import dynamic_agent_manager
-                agent_mapping = dynamic_agent_manager.get_agent_prompt_mapping()
-                logger.debug(f"Current agent_prompt_mapping: {agent_mapping}")
-                logger.debug(f"Attempting to hot reload prompt: {prompt_key}")
-            
             hot_reload_success = await hot_reload_prompt(prompt_key)
-
+        
         return PromptApiResponse(
             success=True,
             message="Successfully updated prompt" + (
@@ -781,8 +772,8 @@ async def revert_prompt_to_version(prompt_key: str, target_version: int):
         from .live_prompt import get_prompt_manager, hot_reload_prompt
         manager = await get_prompt_manager()
 
-        # Check if prompt exists
-        existing = await manager.get_prompt(prompt_key)
+        # Check if prompt exists (without cache to ensure fresh check)
+        existing = await manager.get_prompt(prompt_key, use_cache=False)
         if not existing:
             raise HTTPException(status_code=404, detail="Prompt not found")
 

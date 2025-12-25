@@ -22,6 +22,7 @@ from ..function_tools.function_tool import FunctionTool
 from ..mcp_tools.mcp_tool import MCPTool
 from ..mcp_tools.stdio_mcp_client import BaseMCPClient
 from .base_agent import BaseAgent
+from ...live_prompt.manager import get_dynamic_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +60,18 @@ class LocalAgent(BaseAgent):
         default_factory=Config.get_agent_prompt,
         description="Defaults to 'SYSTEM_PROMPT', the prompt to initialize the agent's behavior.",
     )
+    prompt_key: Optional[str] = Field(
+        default=None,
+        description="Key for live prompt lookup. Defaults to '{agent_name}_prompt' if not specified. Used for dynamic prompt hot-reloading.",
+    )
+    use_live_prompt: bool = Field(
+        default=True,
+        description="Whether to use live prompt system. If False, only uses the static 'prompt' parameter from code.",
+    )
     additional_prompt: Optional[str] = Field(
         default="", description="The prompt add by user, addit to the origin prompt."
     )
+    _resolved_prompt: Optional[str] = None
     sub_agents: Optional[list] = Field(
         default_factory=list,
         description="Names of other agents this agent can delegate to (hierarchy support).",
@@ -162,12 +172,62 @@ class LocalAgent(BaseAgent):
                 fields[k] = copy.deepcopy(fields[k], memo)
         return self.__class__(**fields)
 
+    async def reload_prompt(self) -> bool:
+        """Reload prompt from live prompt system (hot reload support).
+        
+        This method re-fetches the prompt from storage, enabling hot updates
+        without restarting the agent. Useful when prompts are modified in the
+        management platform.
+        
+        Returns:
+            bool: True if prompt was successfully reloaded, False otherwise.
+        """
+        # Check if live prompt is enabled
+        if not self.use_live_prompt:
+            logger.debug(f"Agent '{self.name}' has live prompt disabled, skipping reload")
+            return False
+            
+        try:
+            fallback = self.prompt if self.prompt else ""
+            new_prompt = await get_dynamic_prompt(self.prompt_key, fallback)
+            
+            if new_prompt != self._resolved_prompt:
+                self._resolved_prompt = new_prompt
+                logger.info(f"Agent '{self.name}' prompt hot-reloaded via key '{self.prompt_key}': {len(self._resolved_prompt)} chars")
+                return True
+            else:
+                logger.debug(f"Agent '{self.name}' prompt unchanged")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to reload prompt for agent '{self.name}' with key '{self.prompt_key}': {e}")
+            return False
+
     async def init(self):
         """Initialize the agent and set up team-based execution if configured.
 
         This method performs agent initialization including tool setup and creates
         parallel agent instances for team-based execution when team_size > 1.
         """
+        # Resolve dynamic prompt if live prompt is enabled
+        if self.use_live_prompt:
+            # Set default prompt_key if not specified
+            if self.prompt_key is None:
+                # Default: use agent name + "_prompt" as the key
+                self.prompt_key = f"{self.name}_prompt"
+            
+            # Resolve the prompt from live prompt system
+            try:
+                fallback = self.prompt if self.prompt else ""
+                self._resolved_prompt = await get_dynamic_prompt(self.prompt_key, fallback)
+                logger.debug(f"Agent '{self.name}' resolved prompt via key '{self.prompt_key}': {len(self._resolved_prompt)} chars")
+            except Exception as e:
+                logger.warning(f"Failed to resolve dynamic prompt for agent '{self.name}' with key '{self.prompt_key}': {e}")
+                self._resolved_prompt = self.prompt if self.prompt else ""
+        else:
+            # Live prompt disabled, use static prompt from code
+            self._resolved_prompt = self.prompt if self.prompt else ""
+            logger.debug(f"Agent '{self.name}' using static prompt from code (live prompt disabled)")
+        
         self.is_multimodal_supported = self.mas.oxy_name_to_oxy[
             self.llm_model
         ].is_multimodal_supported
@@ -346,7 +406,9 @@ class LocalAgent(BaseAgent):
             key = match.group(1)
             return str(arguments.get(key, match.group(0)))
 
-        return pattern.sub(replacer, self.prompt.strip())
+        # Use resolved prompt (with live prompt support) instead of static prompt
+        prompt_to_use = self._resolved_prompt if self._resolved_prompt else (self.prompt or "")
+        return pattern.sub(replacer, prompt_to_use.strip())
 
     async def _pre_process(self, oxy_request: OxyRequest) -> OxyRequest:
         """Pre-process request to load conversation history if needed.

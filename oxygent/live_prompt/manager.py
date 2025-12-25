@@ -138,52 +138,51 @@ class PromptManager:
                 logger.info("LocalEs ready, no index creation needed")
                 return
 
-            # For JesEs, check and create index
-            index_exists = await self.db_client.index_exists(self.index_name)
-            if not index_exists:
-                # Create index mapping
-                mapping = {
-                    "mappings": {
-                        "properties": {
-                            "prompt_key": {
-                                "type": "keyword"  # Prompt key for exact matching
-                            },
-                            "prompt_content": {
-                                "type": "text",
-                                "analyzer": "standard"  # Prompt content
-                            },
-                            "description": {
-                                "type": "text"  # Prompt description
-                            },
-                            "category": {
-                                "type": "keyword"  # Category: system, expert, workflow, etc.
-                            },
-                            "agent_type": {
-                                "type": "keyword"  # Corresponding Agent type
-                            },
-                            "version": {
-                                "type": "integer"  # Version number
-                            },
-                            "is_active": {
-                                "type": "boolean"  # Whether active
-                            },
-                            "created_at": {
-                                "type": "date"
-                            },
-                            "updated_at": {
-                                "type": "date"
-                            },
-                            "created_by": {
-                                "type": "keyword"  # Creator
-                            },
-                            "tags": {
-                                "type": "keyword"  # Tags
-                            }
+            # For JesEs, try to create index (it will skip if already exists)
+            # Create index mapping
+            mapping = {
+                "mappings": {
+                    "properties": {
+                        "prompt_key": {
+                            "type": "keyword"  # Prompt key for exact matching
+                        },
+                        "prompt_content": {
+                            "type": "text",
+                            "analyzer": "standard"  # Prompt content
+                        },
+                        "description": {
+                            "type": "text"  # Prompt description
+                        },
+                        "category": {
+                            "type": "keyword"  # Category: system, expert, workflow, etc.
+                        },
+                        "agent_type": {
+                            "type": "keyword"  # Corresponding Agent type
+                        },
+                        "version": {
+                            "type": "integer"  # Version number
+                        },
+                        "is_active": {
+                            "type": "boolean"  # Whether active
+                        },
+                        "created_at": {
+                            "type": "date"
+                        },
+                        "updated_at": {
+                            "type": "date"
+                        },
+                        "created_by": {
+                            "type": "keyword"  # Creator
+                        },
+                        "tags": {
+                            "type": "keyword"  # Tags
                         }
                     }
                 }
+            }
 
-                await self.db_client.create_index(self.index_name, mapping)
+            result = await self.db_client.create_index(self.index_name, mapping)
+            if result:
                 logger.info(f"Created ES index: {self.index_name}")
             else:
                 logger.info(f"ES index already exists: {self.index_name}")
@@ -247,6 +246,7 @@ class PromptManager:
                 history_doc["archived_at"] = datetime.now().isoformat()
 
                 try:
+                    # History doesn't need cache as it's not frequently accessed
                     await self.db_client.index(
                         index_name=f"{self.index_name}_history",
                         doc_id=history_id,
@@ -264,17 +264,40 @@ class PromptManager:
                 doc["created_at"] = datetime.now().isoformat()
                 doc["created_by"] = created_by
 
-            # Save to database
-            await self.db_client.index(
-                index_name=self.index_name,
-                doc_id=prompt_key,
-                body=doc
-            )
-
-            # Update cache with full document
+            #Update cache (for immediate read availability)
+            old_cache_value = self._prompt_cache.get(prompt_key)  # Backup for rollback
             self._prompt_cache[prompt_key] = doc
+            logger.info(f"✓ Cache updated for {prompt_key} (phase 1)")
+            logger.info(f"  Cache now contains {len(self._prompt_cache)} keys: {list(self._prompt_cache.keys())}")
+            logger.info(f"  Updated content: {doc.get('prompt_content', '')[:60]}...")
 
-            logger.info(f"Saved prompt: {prompt_key}")
+            # Persist to ES (for durability)
+            try:
+                await self.db_client.index(
+                    index_name=self.index_name,
+                    doc_id=prompt_key,
+                    body=doc
+                )
+                logger.info(f"✓ Persisted to ES: {prompt_key} (phase 2)")
+            except Exception as es_error:
+                # ES write failed - rollback cache to maintain consistency
+                logger.error(f"ES write failed for {prompt_key}: {es_error}")
+                logger.warning(f"Rolling back cache to previous state")
+                
+                if old_cache_value is not None:
+                    # Restore old value
+                    self._prompt_cache[prompt_key] = old_cache_value
+                    logger.info(f"Cache rolled back to previous version")
+                else:
+                    # Remove newly added key
+                    if prompt_key in self._prompt_cache:
+                        del self._prompt_cache[prompt_key]
+                    logger.info(f"Cache rolled back (removed new key)")
+                
+                # Re-raise to indicate failure
+                raise
+
+            logger.info(f"Saved prompt: {prompt_key} (two-phase commit completed)")
             return True
 
         except Exception as e:
@@ -310,11 +333,23 @@ class PromptManager:
                 "size": 1
             }
 
-            response = await self.db_client.search(
-                index_name=self.index_name,
-                body=search_body
-            )
+            try:
+                response = await self.db_client.search(
+                    index_name=self.index_name,
+                    body=search_body
+                )
+            except Exception as search_error:
+                # Index might not exist yet
+                error_msg = str(search_error)
+                if "index_not_found" in error_msg or "no such index" in error_msg:
+                    logger.debug(f"Index {self.index_name} not found, will be created on first save")
+                    return None
+                else:
+                    raise  # Re-raise if it's a different error
 
+            if response is None:
+                return None
+                
             hits = response.get("hits", {}).get("hits", [])
             if hits:
                 source = hits[0]["_source"]
@@ -342,7 +377,7 @@ class PromptManager:
             self._prompt_cache.clear()
             logger.info("Cleared all prompt cache")
 
-    async def get_prompt_content(self, prompt_key: str, fallback_content: str = "") -> str:
+    async def get_prompt_content(self, prompt_key: str, fallback_content: str = "", use_cache: bool = True) -> str:
         """Get prompt content with fallback support.
 
         Retrieves the content of an active prompt. If the prompt doesn't exist
@@ -351,11 +386,12 @@ class PromptManager:
         Args:
             prompt_key (str): The unique identifier for the prompt.
             fallback_content (str): Content to return if prompt not found or inactive.
+            use_cache (bool): Whether to use cached data. Defaults to True.
 
         Returns:
             str: The prompt content or fallback content.
         """
-        prompt_data = await self.get_prompt(prompt_key)
+        prompt_data = await self.get_prompt(prompt_key, use_cache=use_cache)
         if prompt_data and prompt_data.get("is_active", True):
             return prompt_data["prompt_content"]
         return fallback_content
@@ -508,6 +544,9 @@ class PromptManager:
 
         Retrieves all prompts matching the specified criteria. Supports filtering
         by category, agent type, active status, and tags.
+        
+        Uses cache-first strategy: returns cached data if available and no filters applied,
+        otherwise queries ES and updates cache.
 
         Args:
             category (str, optional): Filter by category.
@@ -519,6 +558,20 @@ class PromptManager:
             List[Dict[str, Any]]: List of matching prompts.
         """
         try:
+            # If no filters and cache is populated, return from cache directly
+            has_filters = any([category, agent_type, is_active is not None, tags])
+            
+            if not has_filters and self._prompt_cache:
+                results = []
+                for prompt_key, prompt_data in self._prompt_cache.items():
+                    result = prompt_data.copy()
+                    result["id"] = prompt_key
+                    results.append(result)
+                # Sort by updated_at descending
+                results.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+                return results
+            
+            # Build query for ES search
             query = {"match_all": {}}
             filters = []
 
@@ -555,6 +608,10 @@ class PromptManager:
                 result = hit["_source"]
                 result["id"] = hit["_id"]
                 results.append(result)
+                
+                # Update cache with fetched data (if no filters, refresh full cache)
+                if not has_filters:
+                    self._prompt_cache[hit["_id"]] = hit["_source"]
 
             return results
 
@@ -574,20 +631,29 @@ class PromptManager:
             bool: True if deletion was successful, False otherwise.
         """
         try:
-            await self.db_client.delete(
-                index_name=self.index_name,
-                doc_id=prompt_key
-            )
+            # If ES delete fails, cache is not touched, avoiding inconsistency
+            try:
+                await self.db_client.delete(
+                    index_name=self.index_name,
+                    doc_id=prompt_key
+                )
+                logger.info(f"Deleted from ES: {prompt_key}")
+            except Exception as es_error:
+                logger.error(f"ES delete failed for {prompt_key}: {es_error}")
+                # Don't clear cache if ES delete fails
+                # This prevents data resurrection on restart
+                raise  # Re-raise to trigger outer exception handler
 
-            # Clear cache
+            # ES delete successful, now clear cache
             if prompt_key in self._prompt_cache:
                 del self._prompt_cache[prompt_key]
+                logger.info(f"Cache cleared for {prompt_key} (after ES delete)")
 
-            logger.info(f"Deleted prompt: {prompt_key}")
             return True
 
         except Exception as e:
             logger.error(f"Failed to delete prompt {prompt_key}: {e}")
+            # Cache remains unchanged - consistent with ES state
             return False
 
     async def search_prompts(self, keyword: str, category: str = None) -> List[Dict[str, Any]]:
@@ -686,7 +752,24 @@ async def get_prompt_manager() -> PromptManager:
     return prompt_manager
 
 
-async def get_dynamic_prompt(prompt_key: str, fallback_content: str = "") -> str:
+async def close_prompt_manager():
+    """Close the global prompt manager and clean up resources.
+    
+    This function should be called when the application is shutting down
+    to properly close the Elasticsearch connection and prevent resource leaks.
+    """
+    global prompt_manager
+    if prompt_manager is not None:
+        try:
+            await prompt_manager.close()
+            logger.info("Prompt manager closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing prompt manager: {e}")
+        finally:
+            prompt_manager = None
+
+
+async def get_dynamic_prompt(prompt_key: str, fallback_content: str = "", use_cache: bool = True) -> str:
     """Get dynamic prompt content with ES priority and fallback support.
 
     Retrieves prompt content from the prompt management system. If the prompt
@@ -697,13 +780,54 @@ async def get_dynamic_prompt(prompt_key: str, fallback_content: str = "") -> str
         prompt_key (str): The unique identifier for the prompt.
         fallback_content (str): Fallback content (original static prompt) to use
             if the dynamic prompt is not available. Defaults to "".
+        use_cache (bool): Whether to use cached data. Set to False to force reload
+            from database. Defaults to True.
 
     Returns:
         str: The prompt content from ES/LocalEs or fallback content.
     """
     try:
         manager = await get_prompt_manager()
-        return await manager.get_prompt_content(prompt_key, fallback_content)
+        return await manager.get_prompt_content(prompt_key, fallback_content, use_cache=use_cache)
     except Exception as e:
         logger.error(f"Failed to get dynamic prompt {prompt_key}: {e}")
         return fallback_content
+
+async def resolve_prompt_from_es(prompt_key: str, default_prompt: str = "", use_cache: bool = True) -> str:
+    """
+    Resolve prompt content from ES using the exact prompt_key
+
+    Args:
+        prompt_key: The exact prompt key to search for in ES
+        default_prompt: Fallback prompt if not found in ES
+        use_cache: Whether to use cached data. Set to False to force reload
+
+    Returns:
+        str: Prompt content from ES, or default_prompt, or empty string
+
+    Logic:
+    1. Try to get prompt from ES using the exact prompt_key
+    2. If found and active, return the content
+    3. If not found, return default_prompt
+    4. If default_prompt is empty, return "" (system uses built-in defaults)
+    """
+    try:
+        # Use the exact prompt key provided
+        prompt_content = await get_dynamic_prompt(prompt_key, default_prompt, use_cache=use_cache)
+
+        if prompt_content and prompt_content != default_prompt:
+            logger.info(f"Loaded hot prompt from ES: {prompt_key}")
+            return prompt_content
+
+        # If no dynamic prompt found, use default or empty string
+        if default_prompt and default_prompt.strip():
+            logger.info(f"Using default prompt for {prompt_key}")
+            return default_prompt
+        else:
+            logger.info(f"No prompt found for {prompt_key}, using system default")
+            return ""
+
+    except Exception as e:
+        logger.error(f"Failed to resolve hot prompt for {prompt_key}: {e}")
+        # Return default prompt or empty string on error
+        return default_prompt if default_prompt else ""

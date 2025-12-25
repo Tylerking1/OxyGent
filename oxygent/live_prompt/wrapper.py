@@ -18,7 +18,7 @@ class DynamicAgentManager:
 
     def register_agents_from_mas(self, mas_instance):
         """
-        Auto-register agents that use get_live_prompts from MAS instance
+        Auto-register agents that use live prompts from MAS instance
 
         Args:
             mas_instance: MAS instance
@@ -86,25 +86,32 @@ class DynamicAgentManager:
             return False
 
         try:
-            from .hot_prompts import _resolve_prompt_from_es
             from .manager import get_prompt_manager
 
             prompt_key = self.agent_prompt_mapping[agent_name]
             agent_instance = self.mas_instance.oxy_name_to_oxy[agent_name]
 
-            # Clear PromptManager cache to force reload from ES
+            # Get manager (cache may already have latest data from save_prompt)
             manager = await get_prompt_manager()
-            manager.clear_cache(prompt_key)
-            logger.debug(f"Cleared PromptManager cache for: {prompt_key}")
+            logger.debug(f"Hot reload for {agent_name} using prompt_key: {prompt_key}")
 
-            # Get original prompt as fallback
-            original_prompt = getattr(agent_instance, 'prompt', '')
-
-            # Get latest prompt from ES (bypass cache)
-            new_prompt = await _resolve_prompt_from_es(prompt_key, original_prompt)
-
-            # Update agent prompt
-            if hasattr(agent_instance, 'prompt'):
+            # Use agent's reload_prompt method if available
+            if hasattr(agent_instance, 'reload_prompt'):
+                success = await agent_instance.reload_prompt()
+                if success:
+                    logger.info(f"Hot-reloaded prompt for: {agent_name}")
+                return success
+            # Fallback to old approach for backward compatibility
+            elif hasattr(agent_instance, 'prompt'):
+                from .manager import resolve_prompt_from_es
+                
+                # Get original prompt as fallback
+                original_prompt = getattr(agent_instance, 'prompt', '')
+                
+                # Get latest prompt from ES
+                new_prompt = await resolve_prompt_from_es(prompt_key, original_prompt)
+                
+                # Update agent prompt
                 agent_instance.prompt = new_prompt
 
                 # Re-set description for LLM if method exists
@@ -114,7 +121,7 @@ class DynamicAgentManager:
                 logger.info(f"Updated prompt for: {agent_name}")
                 return True
             else:
-                logger.warning(f"Agent has no prompt attribute: {agent_name}")
+                logger.warning(f"Agent has no prompt attribute or reload_prompt method: {agent_name}")
                 return False
 
         except ConnectionError as e:
@@ -212,10 +219,10 @@ async def auto_save_agent_prompts_to_database(mas_instance):
         mas_instance: MAS instance
     """
     try:
-        from .manager import PromptManager
+        from .manager import get_prompt_manager
 
-        # Initialize prompt manager
-        manager = PromptManager()
+        # Use global singleton prompt manager (CRITICAL: ensures cache consistency)
+        manager = await get_prompt_manager()
 
         # Get existing prompts from database to avoid duplicates
         existing_prompts = await manager.list_prompts()
@@ -286,13 +293,11 @@ async def hot_reload_prompt(prompt_key: str) -> bool:
 
     Returns:
         bool: Whether any agent was successfully updated
+        
+    Note:
+        No cache clearing needed - save_prompt already updated cache.
+        Agent reload_prompt will fetch latest data from cache.
     """
-    from .manager import get_prompt_manager
-    
-    # Clear PromptManager cache before hot reload
-    manager = await get_prompt_manager()
-    manager.clear_cache(prompt_key)
-    
     results = await dynamic_agent_manager.update_prompt_by_key(prompt_key)
     return any(results.values()) if results else False
 
@@ -303,13 +308,11 @@ async def hot_reload_all_prompts() -> bool:
 
     Returns:
         bool: Whether at least one agent was successfully updated
+        
+    Note:
+        No cache clearing needed - save_prompt already updated cache.
+        Agent reload_prompt will fetch latest data from cache.
     """
-    from .manager import get_prompt_manager
-    
-    # Clear all PromptManager cache before hot reload
-    manager = await get_prompt_manager()
-    manager.clear_cache()
-    
     results = await dynamic_agent_manager.update_all_prompts()
     return any(results.values()) if results else False
 

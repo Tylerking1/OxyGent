@@ -210,6 +210,7 @@ class MAS(BaseModel):
         - Initializing the database connections (Elasticsearch, Redis)
         - Setting up the agent organization structure
         - Initialize the vector search if configured
+        - Setting up dynamic agents for live prompt management
         """
         self.show_banner()
         self.show_mas_info()

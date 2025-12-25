@@ -2,17 +2,9 @@ import asyncio
 import os
 
 from oxygent import MAS, Config, oxy, preset_tools
-from oxygent.live_prompt import get_live_prompts
 
 Config.set_agent_llm_model("default_llm")
 
-"""
-get_live_prompts(prompt_key: str, default_prompt: Optional[str] = None) -> str
-Logic:
-1. First try to resolve from storage using prompt_key
-2. If not found and default_prompt is provided, use default_prompt
-3. If not found and default_prompt is None/empty, return "" 
-"""
 
 oxy_space = [
     oxy.HttpLLM(
@@ -22,48 +14,43 @@ oxy_space = [
         model_name=os.getenv("DEFAULT_LLM_MODEL_NAME"),
     ),
     preset_tools.time_tools,
+    # use system default prompt when code prompt is empty
     oxy.ReActAgent(
         name="time_agent",
         desc="A tool that can query the time",
-        prompt=get_live_prompts(
-            "time_agent_prompt",
-            "You are a time management assistant. Help users with time-related queries."  # default prompt
-        ),
+        prompt="You are a time management assistant. Help users with time-related queries.",
         tools=["time_tools"],
+        use_live_prompt=False  # 关闭动态提示词，且prompt为空，则使用系统默认提示词
     ),
     preset_tools.file_tools,
 
+    # use code prompt as fallback when live prompt not exist
     oxy.ReActAgent(
         name="file_agent",
         desc="A tool that can operate the file system",
         tools=["file_tools"],
-        prompt=get_live_prompts(
-            "file_agent_prompt",
-            "You are a file system assistant. Help users with file operations safely and efficiently."  # default prompt
-        )
+        prompt="You are a file system assistant. Help users with file operations safely and efficiently.",
+        use_live_prompt=False # 关闭动态提示词，则使用代码中的 prompt 参数
     ),
     preset_tools.math_tools,
+
+    # 使用 动态提示词 功能
     oxy.ReActAgent(
         name="math_agent",
         desc="A tool that can perform mathematical calculations.",
         tools=["math_tools"],
-        prompt=get_live_prompts(
-            "math_agent_prompt"
-        ),
+        prompt="You are a math assistant. Help users with mathematical calculations.",
     ),
     oxy.ReActAgent(
         is_master=True,
         name="master_agent",
         sub_agents=["time_agent", "file_agent", "math_agent"],
-        prompt=get_live_prompts(
-            "master_agent_prompt", # prompt key
-            ""  # can be empty use system default
-        ),
+        prompt="You are the master agent. Coordinate the actions of your sub-agents effectively.",
     ),
 ]
 
 
-async def main():
+async def main():#
     async with MAS(oxy_space=oxy_space) as mas:
         await mas.start_web_service(
             first_query="What time is it now? Please save it into time.txt."
