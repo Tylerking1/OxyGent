@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="shortcut icon" href="./image/group-favicon.png" type="image/x-icon">
+    <title>History - OxyGent</title>
+    <link rel="stylesheet" href="./css/style.css?time=2">
+    <link rel="stylesheet" href="./css/main.css?time=2"/>
+    <link rel="stylesheet" href="./css/history.css?time=2"/>
+    <script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+</head>
+<body>
+<div class="history-container">
+    <div class="history-header">
+        <div class="header-left">
+            <img class="header-logo" src="./image/group-favicon.png" alt="OxyGent">
+            <h1>History</h1>
+        </div>
+        <div class="header-right">
+            <button class="btn-back" onclick="goBack()">
+                <img src="./image/arrow-left.svg" alt="Back">
+            </button>
+        </div>
+    </div>
+    
+    <div class="history-content">
+        <div class="search-bar">
+            <div class="search-input-container">
+                <input type="text" id="searchInput" placeholder="Search conversations..." onkeyup="searchConversations()">
+                <img src="./image/group-vector-default.svg" alt="Search" class="search-icon">
+            </div>
+            <div class="filter-container">
+                <select id="ratingFilter" onchange="filterConversations()" class="filter-select">
+                    <option value="all">All Conversations</option>
+                    <option value="liked">Liked 👍</option>
+                    <option value="disliked">Disliked 👎</option>
+                    <option value="unrated">Unrated</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="conversations-list" id="conversationsList">
+            <!-- Conversations will be loaded here -->
+        </div>
+        
+        <div class="pagination" id="pagination">
+            <!-- Pagination controls will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<script>
+    var currentPage = 1;
+    var pageSize = 20;
+    var totalPages = 0;
+    var allConversationGroups = [];
+    var filteredConversationGroups = [];
+    var currentRatingFilter = "all";  // Current filter state
+    
+    $(document).ready(function() {
+        // Set initial value for filter dropdown
+        $("#ratingFilter").val(currentRatingFilter);
+        loadConversations();
+    });
+    
+    function loadConversations() {
+        $.ajax({
+            type: "GET",
+            url: "../history_with_ratings",
+            data: {
+                page: currentPage,
+                page_size: pageSize,
+                rating_filter: currentRatingFilter  // Send filter parameter
+            },
+            success: function(response) {
+                // Compatible with both code 0 and 200
+                if ((response.code === 0 || response.code === 200) && response.data) {
+                    // Use conversation_groups instead of conversations
+                    allConversationGroups = response.data.conversation_groups || [];
+                    filteredConversationGroups = allConversationGroups;
+                    totalPages = response.data.total_pages;
+                    renderConversationGroups(filteredConversationGroups);
+                    renderPagination();
+                } else {
+                    showError("Failed to load conversations: " + (response.message || "Unknown error"));
+                }
+            },
+            error: function(xhr, status, error) {
+                showError("Network error occurred: " + error);
+            }
+        });
+    }
+    
+    function renderConversationGroups(conversationGroups) {
+        var listDiv = $("#conversationsList");
+        listDiv.empty();
+
+        if (conversationGroups.length === 0) {
+            listDiv.append(`
+                <div class="empty-state">
+                    <img src="./image/empty.svg" alt="No conversations">
+                    <p>No conversations found</p>
+                </div>
+            `);
+            return;
+        }
+
+        conversationGroups.forEach(function(group) {
+            // Aggregate rating statistics for all conversations in the group
+            var totalLikes = 0;
+            var totalDislikes = 0;
+            var hasAnyRating = false;
+
+            // Iterate through all conversations and accumulate rating data
+            group.conversations.forEach(function(conv) {
+                if (conv.rating_stats && conv.rating_stats.total_ratings > 0) {
+                    totalLikes += conv.rating_stats.like_count || 0;
+                    totalDislikes += conv.rating_stats.dislike_count || 0;
+                    hasAnyRating = true;
+                }
+            });
+
+            // Determine group background color and style
+            var groupRatingClass = '';
+            var groupRatingIndicator = '';
+            var groupRatingStatsDisplay = '';
+            var groupBackgroundStyle = '';
+
+            if (hasAnyRating) {
+                // Display aggregated rating statistics
+                groupRatingStatsDisplay = `<span class="rating-stats-badge" style="margin-left:8px;font-size:12px;font-weight:600;">
+                    👍 ${totalLikes} | 👎 ${totalDislikes}
+                </span>`;
+
+                if (totalDislikes > 0) {
+                    // Contains negative ratings, display red background
+                    groupRatingClass = 'rating-bad';
+                    groupRatingIndicator = '<span class="rating-indicator bad">👎</span>';
+                    groupBackgroundStyle = 'background: linear-gradient(to right, #fee2e2, #fef2f2); border-left: 4px solid #dc2626;';
+                } else if (totalLikes > 0) {
+                    // All positive ratings, display green background
+                    groupRatingClass = 'rating-good';
+                    groupRatingIndicator = '<span class="rating-indicator good">👍</span>';
+                    groupBackgroundStyle = 'background: linear-gradient(to right, #d1fae5, #ecfdf5); border-left: 4px solid #059669;';
+                }
+            }
+
+            // Get first conversation as main display
+            var firstConv = group.conversations[0];
+            var input = firstConv.input || "No query";
+            try {
+                var parsedInput = JSON.parse(input);
+                if (parsedInput.query) {
+                    input = parsedInput.query;
+                }
+            } catch (e) {
+                // If not JSON, keep as-is
+            }
+
+            var displayInput = input.length > 100 ? input.substring(0, 100) + "..." : input;
+            var createTime = formatDate(group.latest_create_time);
+            var conversationCount = group.conversation_count || group.conversations.length;
+
+            // Build group container (apply background style)
+            var groupHtml = `
+                <div class="conversation-group ${groupRatingClass}" data-group-id="${group.group_id}" style="${groupBackgroundStyle}">
+                    <div class="group-header">
+                        <div class="conv-title">
+                            <span class="conv-icon">📁</span>
+                            <span class="conv-callee">${escapeHtml(firstConv.callee || 'Agent')}</span>
+                            ${groupRatingIndicator}
+                            ${groupRatingStatsDisplay}
+                            <span class="conversation-count-badge">${conversationCount} conversation${conversationCount > 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="conv-actions">
+                            <span class="conv-time">${createTime}</span>
+                            <button class="btn-toggle-group" onclick="event.stopPropagation(); toggleGroup('${group.group_id}')">
+                                <span class="toggle-icon">▼</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="group-summary" onclick="toggleGroup('${group.group_id}')">
+                        <div class="conv-query">
+                            <strong>Initial Query:</strong> ${escapeHtml(displayInput)}
+                        </div>
+                    </div>
+                    <div class="group-conversations" id="group-${group.group_id}" style="display:none;">
+            `;
+
+            // Create entries for each conversation in the group
+            group.conversations.forEach(function(conv, index) {
+                var convInput = conv.input || "No query";
+                try {
+                    var parsedConvInput = JSON.parse(convInput);
+                    if (parsedConvInput.query) {
+                        convInput = parsedConvInput.query;
+                    }
+                } catch (e) {
+                    // Keep as-is
+                }
+
+                var convOutput = conv.output || "";
+                var displayConvInput = convInput.length > 100 ? convInput.substring(0, 100) + "..." : convInput;
+                var displayConvOutput = convOutput.length > 150 ? convOutput.substring(0, 150) + "..." : convOutput;
+                var convCreateTime = formatDate(conv.create_time);
+
+                // Handle rating information for individual conversation
+                var ratingStats = conv.rating_stats || null;
+                var convRatingClass = '';
+                var convRatingIndicator = '';
+                var convRatingStatsDisplay = '';
+                var convBackgroundStyle = '';
+
+                if (ratingStats && ratingStats.total_ratings > 0) {
+                    var likeCount = ratingStats.like_count || 0;
+                    var dislikeCount = ratingStats.dislike_count || 0;
+                    var satisfactionRate = ratingStats.satisfaction_rate || 0;
+
+                    convRatingStatsDisplay = `<span class="rating-stats-badge" style="margin-left:8px;font-size:11px;color:#6b7280;">
+                        👍 ${likeCount} | 👎 ${dislikeCount} | ${satisfactionRate.toFixed(0)}%
+                    </span>`;
+
+                    // Background color logic for individual conversation
+                    if (dislikeCount > 0) {
+                        convRatingClass = 'rating-bad';
+                        convRatingIndicator = '<span class="rating-indicator bad" style="font-size:14px;">👎</span>';
+                        convBackgroundStyle = 'background: #fef2f2; border-left: 3px solid #dc2626;';
+                    } else if (likeCount > 0) {
+                        convRatingClass = 'rating-good';
+                        convRatingIndicator = '<span class="rating-indicator good" style="font-size:14px;">👍</span>';
+                        convBackgroundStyle = 'background: #ecfdf5; border-left: 3px solid #059669;';
+                    }
+                }
+
+                // Build comments display
+                var commentsHtml = '';
+                if (conv.rating_history && conv.rating_history.length > 0) {
+                    var hasComments = conv.rating_history.some(r => r.comment);
+                    if (hasComments) {
+                        commentsHtml = '<div class="conv-comments" style="margin-top:8px;padding:8px;background:#f9fafb;border-radius:4px;border-left:3px solid #3b82f6;">';
+                        commentsHtml += '<div style="font-size:11px;font-weight:600;color:#1f2937;margin-bottom:6px;">💬 User Comments:</div>';
+
+                        conv.rating_history.forEach(function(rating) {
+                            if (rating.comment) {
+                                var ratingIcon = rating.rating_type === 'like' ? '👍' : '👎';
+                                var commentTime = rating.create_time ? ` <span style="color:#9ca3af;font-size:10px;">${rating.create_time}</span>` : '';
+                                commentsHtml += `<div style="margin-bottom:4px;font-size:12px;">
+                                    <span style="color:#6b7280;">${ratingIcon}</span>
+                                    <span style="color:#374151;">${escapeHtml(rating.comment)}</span>
+                                    ${commentTime}
+                                </div>`;
+                            }
+                        });
+
+                        commentsHtml += '</div>';
+                    }
+                }
+
+                groupHtml += `
+                    <div class="conversation-item-in-group ${convRatingClass}" data-trace-id="${conv.trace_id}" style="${convBackgroundStyle} margin: 8px 0; padding: 12px; border-radius: 6px;">
+                        <div class="conv-header-small">
+                            <div class="conv-title-small">
+                                <span class="conv-number">#${index + 1}</span>
+                                ${convRatingIndicator}
+                                ${convRatingStatsDisplay}
+                            </div>
+                            <span class="conv-time-small">${convCreateTime}</span>
+                        </div>
+                        <div class="conv-body-small" onclick="event.stopPropagation(); openConversation('${conv.trace_id}')">
+                            <div class="conv-query-small">
+                                <strong>Query:</strong> ${escapeHtml(displayConvInput)}
+                            </div>
+                            ${displayConvOutput ? `<div class="conv-output-small"><strong>Output:</strong> ${escapeHtml(displayConvOutput)}</div>` : ''}
+                            ${commentsHtml}
+                        </div>
+                        <div class="conv-footer-small">
+                            <span class="trace-id-small">Trace ID: ${conv.trace_id}</span>
+                            <button class="btn-view-small" onclick="event.stopPropagation(); openConversation('${conv.trace_id}')">
+                                View Details →
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            groupHtml += `
+                    </div>
+                </div>
+            `;
+
+            listDiv.append(groupHtml);
+        });
+    }
+
+    function toggleGroup(groupId) {
+        var groupElement = $('#group-' + groupId);
+        var toggleIcon = $('[data-group-id="' + groupId + '"] .toggle-icon');
+        
+        if (groupElement.is(':visible')) {
+            groupElement.slideUp(300);
+            toggleIcon.text('▼');
+        } else {
+            groupElement.slideDown(300);
+            toggleIcon.text('▲');
+        }
+    }
+    
+    // Render rating details (using existing data, no additional network requests)
+    function renderRatingDetails(traceId, ratings) {
+        console.log('Rendering rating details for:', traceId, 'with', ratings.length, 'ratings');
+        
+        var detailsHtml = '<div style="font-size:13px;color:#374151;line-height:1.6;">';
+        detailsHtml += `<div style="font-weight:600;margin-bottom:8px;color:#111827;">💬 Rating Records (${ratings.length} items)</div>`;
+        
+        ratings.forEach(function(rating, index) {
+            detailsHtml += '<div style="margin-bottom:10px;padding:8px;background:#fff;border-radius:4px;border:1px solid #e5e7eb;">';
+            
+            // Rating type and time
+            var ratingIcon = rating.rating_type === 'like' ? '👍' : '👎';
+            var ratingText = rating.rating_type === 'like' ? 'Like' : 'Dislike';
+            detailsHtml += `<div style="margin-bottom:4px;"><strong>${ratingIcon} ${ratingText}</strong> <span style="color:#9ca3af;font-size:12px;">${rating.create_time}</span></div>`;
+            
+            // Comment content
+            if (rating.comment) {
+                detailsHtml += `<div style="margin-bottom:4px;"><strong style="color:#6b7280;">Comment:</strong> ${escapeHtml(rating.comment)}</div>`;
+            }
+            
+            // ERP information
+            if (rating.erp) {
+                detailsHtml += `<div><strong style="color:#6b7280;">ERP:</strong> ${escapeHtml(rating.erp)}</div>`;
+            }
+            
+            detailsHtml += '</div>';
+        });
+        
+        detailsHtml += '</div>';
+        
+        var detailsContainer = $(`#rating-details-${traceId}`);
+        detailsContainer.html(detailsHtml);
+        detailsContainer.show();
+        console.log('Rating details displayed for:', traceId);
+    }
+    
+    function renderPagination() {
+        var paginationDiv = $("#pagination");
+        paginationDiv.empty();
+        
+        if (totalPages <= 1) return;
+        
+        var html = '<div class="pagination-controls">';
+        
+        // Previous button
+        if (currentPage > 1) {
+            html += `<button class="page-btn" onclick="goToPage(${currentPage - 1})">← Previous</button>`;
+        } else {
+            html += `<button class="page-btn" disabled>← Previous</button>`;
+        }
+        
+        // Page numbers
+        html += '<div class="page-numbers">';
+        var startPage = Math.max(1, currentPage - 2);
+        var endPage = Math.min(totalPages, currentPage + 2);
+        
+        if (startPage > 1) {
+            html += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
+            if (startPage > 2) {
+                html += '<span class="page-ellipsis">...</span>';
+            }
+        }
+        
+        for (var i = startPage; i <= endPage; i++) {
+            if (i === currentPage) {
+                html += `<button class="page-btn active">${i}</button>`;
+            } else {
+                html += `<button class="page-btn" onclick="goToPage(${i})">${i}</button>`;
+            }
+        }
+        
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                html += '<span class="page-ellipsis">...</span>';
+            }
+            html += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+        }
+        html += '</div>';
+        
+        // Next button
+        if (currentPage < totalPages) {
+            html += `<button class="page-btn" onclick="goToPage(${currentPage + 1})">Next →</button>`;
+        } else {
+            html += `<button class="page-btn" disabled>Next →</button>`;
+        }
+        
+        html += '</div>';
+        html += `<div class="page-info">Page ${currentPage} of ${totalPages}</div>`;
+        
+        paginationDiv.html(html);
+    }
+    
+    function goToPage(page) {
+        currentPage = page;
+        // Maintain current filter state
+        loadConversations();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    
+    function searchConversations() {
+        var searchTerm = $("#searchInput").val().toLowerCase();
+
+        if (searchTerm === "") {
+            filteredConversationGroups = allConversationGroups;
+        } else {
+            filteredConversationGroups = allConversationGroups.filter(function(group) {
+                // Search within all conversations in the group
+                return group.conversations.some(function(conv) {
+                    return (conv.input && conv.input.toLowerCase().includes(searchTerm)) ||
+                           (conv.output && conv.output.toLowerCase().includes(searchTerm)) ||
+                           (conv.trace_id && conv.trace_id.toLowerCase().includes(searchTerm)) ||
+                           (conv.callee && conv.callee.toLowerCase().includes(searchTerm));
+                });
+            });
+        }
+
+        renderConversationGroups(filteredConversationGroups);
+    }
+
+    function filterConversations() {
+        // Get selected filter criteria
+        currentRatingFilter = $("#ratingFilter").val();
+
+        // Reset to first page and reload data
+        currentPage = 1;
+        loadConversations();
+
+        // Clear search box
+        $("#searchInput").val("");
+    }
+    
+    function openConversation(traceId) {
+        window.location.href = `./node.html?id=${traceId}`;
+    }
+    
+    function goBack() {
+        window.location.href = "./index.html";
+    }
+    
+    function formatDate(dateString) {
+        if (!dateString) return "N/A";
+        
+        try {
+            var date = new Date(dateString);
+            var now = new Date();
+            var diff = now - date;
+            var seconds = Math.floor(diff / 1000);
+            var minutes = Math.floor(seconds / 60);
+            var hours = Math.floor(minutes / 60);
+            var days = Math.floor(hours / 24);
+            
+            if (days > 7) {
+                return date.toLocaleDateString();
+            } else if (days > 0) {
+                return days + " day" + (days > 1 ? "s" : "") + " ago";
+            } else if (hours > 0) {
+                return hours + " hour" + (hours > 1 ? "s" : "") + " ago";
+            } else if (minutes > 0) {
+                return minutes + " minute" + (minutes > 1 ? "s" : "") + " ago";
+            } else {
+                return "Just now";
+            }
+        } catch (e) {
+            return dateString;
+        }
+    }
+    
+    function escapeHtml(text) {
+        var map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+    
+    function showError(message) {
+        var listDiv = $("#conversationsList");
+        listDiv.empty();
+        listDiv.append(`
+            <div class="error-state">
+                <p>${message}</p>
+            </div>
+        `);
+    }
+</script>
+</body>
+</html>

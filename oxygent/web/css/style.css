@@ -59,6 +59,7 @@ button {
 .header .header-left {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
 }
 .header .header-left .header-left-img {
     width: 28px;
@@ -69,9 +70,47 @@ button {
     align-items: center;
 }
 
+.header .header-title {
+    flex: 1;
+    text-align: center;
+    font-size: 14px;
+    color: #6b7280;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 20px;
+}
+
 .header .header-right {
     display: flex;
     align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.header .header-right .btn-history {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #374151;
+    transition: all 0.2s;
+}
+
+.header .header-right .btn-history:hover {
+    background: #f9fafb;
+    border-color: #155EEF;
+    color: #155EEF;
+}
+
+.header .header-right .btn-history img {
+    width: 16px;
+    height: 16px;
 }
 
 .header .header-right .btn-theme,
@@ -109,32 +148,6 @@ button {
 .header .header-right #step {
     font-size: 14px;
     font-weight: 400;
-}
-
-.btn-history {
-    display: flex;
-    align-items: center;
-    height: 44px;
-    padding: 0 16px;
-    background-color: #F3F3F5;
-    border-radius: 4px;
-    margin-right: 10px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-    color: #333;
-    font-size: 14px;
-    font-weight: 500;
-    gap: 8px;
-    border: none;
-}
-
-.btn-history:hover {
-    background-color: #E8E8EB;
-}
-
-.btn-history img {
-    width: 20px;
-    height: 20px;
 }
 
 .container {
@@ -500,4 +513,34 @@ td {
     background-color: white;
     width: 80%;
     margin-left: auto;
+}
+
+/* 响应式布局 - 确保 History 按钮在小屏幕上也可见 */
+@media (max-width: 1200px) {
+    .header .header-title {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .header {
+        padding: 10px;
+    }
+    
+    .header .header-right .btn-history {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .header .header-right .btn-history img {
+        width: 14px;
+        height: 14px;
+    }
+    
+    .header .header-right .control {
+        padding-left: 5px;
+        padding-right: 5px;
+        gap: 2px;
+        height: 36px;
+    }
 }

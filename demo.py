@@ -5,7 +5,6 @@ from oxygent import MAS, Config, oxy, preset_tools
 
 Config.set_agent_llm_model("default_llm")
 
-
 oxy_space = [
     oxy.HttpLLM(
         name="default_llm",

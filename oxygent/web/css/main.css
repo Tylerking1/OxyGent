@@ -166,3 +166,229 @@
     right: 0;
     z-index: 10;
 }
+
+/* 消息评价功能样式 */
+/* 消息评价状态样式 - 替代原有的评价按钮样式 */
+
+/* 好评消息样式 - 自然绿色 */
+.master.message-rating-good {
+    background: linear-gradient(135deg, rgba(240, 253, 244, 0.3) 0%, transparent 100%);
+    border-left: 3px solid #22c55e;
+    padding-left: 8px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.master.message-rating-good:hover {
+    background: linear-gradient(135deg, rgba(240, 253, 244, 0.5) 0%, transparent 100%);
+    border-left-color: #16a34a;
+}
+
+.master.message-rating-good span {
+    background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+/* 差评消息样式 - 自然红色 */
+.master.message-rating-bad {
+    background: linear-gradient(135deg, rgba(254, 242, 242, 0.3) 0%, transparent 100%);
+    border-left: 3px solid #ef4444;
+    padding-left: 8px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.master.message-rating-bad:hover {
+    background: linear-gradient(135deg, rgba(254, 242, 242, 0.5) 0%, transparent 100%);
+    border-left-color: #dc2626;
+}
+
+.master.message-rating-bad span {
+    background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* 消息评价指示器样式 */
+.message-rating-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 12px;
+    margin-left: 8px;
+    animation: fadeIn 0.3s ease;
+    vertical-align: middle;
+}
+
+.message-rating-indicator.good {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+    box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);
+}
+
+.message-rating-indicator.bad {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+}
+
+/* 消息评价按钮容器样式 */
+.message-rating-container {
+    margin-top: 8px;
+    margin-left: 54px;
+    position: relative;
+}
+
+.message-rating-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.message-rating-actions:hover {
+    opacity: 1;
+}
+
+.master .message-rating-container {
+    margin-left: 54px;
+}
+
+.other .message-rating-container {
+    margin-left: 54px;
+}
+
+/* 评价按钮样式 */
+.btn-rating {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 40px;
+    justify-content: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-rating:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-rating.like:hover:not(:disabled) {
+    background: linear-gradient(135deg, #f0f9ff, #ffffff);
+    border-color: #22c55e;
+    color: #16a34a;
+}
+
+.btn-rating.dislike:hover:not(:disabled) {
+    background: linear-gradient(135deg, #fef2f2, #ffffff);
+    border-color: #ef4444;
+    color: #dc2626;
+}
+
+.btn-rating:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.btn-rating:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.rating-count {
+    font-weight: 500;
+    min-width: 10px;
+    text-align: center;
+    font-size: 11px;
+}
+
+/* 评价反馈提示样式 */
+.rating-feedback {
+    position: absolute;
+    bottom: -35px;
+    left: 0;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 10;
+    animation: fadeInUp 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.rating-feedback.success {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+}
+
+.rating-feedback.error {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: #fff;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .master.message-rating-good,
+    .master.message-rating-bad {
+        margin-left: 0;
+        padding-left: 6px;
+        border-left-width: 2px;
+    }
+
+    .message-rating-indicator {
+        width: 18px;
+        height: 18px;
+        font-size: 11px;
+        margin-left: 6px;
+    }
+
+    .message-rating-container {
+        margin-left: 20px;
+    }
+
+    .btn-rating {
+        font-size: 11px;
+        padding: 3px 6px;
+        min-width: 35px;
+    }
+
+    .rating-feedback {
+        font-size: 10px;
+        bottom: -30px;
+        left: 10px;
+        right: 10px;
+    }
+}

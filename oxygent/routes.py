@@ -7,6 +7,7 @@ This module exposes several HTTP endpoints that support:
     * Retrieval of node‐level execution details stored in Elasticsearch
     * Proxying user requests to an LLM provider through the OxyGent agent stack
     * Lightweight persistence for scripted calls (save / list / load)
+    * Conversation rating and evaluation system
 
 Every public callable is documented using **Google Python Style** docstrings so
 that automatic documentation tooling such as *Sphinx napoleon* can render them
@@ -18,6 +19,7 @@ Typical usage example::
     curl http://localhost:8000/check_alive  #→ {"alive": 1}
 """
 
+import ast
 import json
 import logging
 import os
@@ -27,7 +29,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 import aiofiles
-from fastapi import APIRouter, File, UploadFile, HTTPException, Query
+from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
@@ -36,11 +38,50 @@ from .databases.db_es import JesEs, LocalEs
 from .db_factory import DBFactory
 from .oxy_factory import OxyFactory, SecurityError
 from .schemas import OxyRequest, WebResponse
+from .schemas.evaluation import (
+    RatingRequest,
+    RatingResponse,
+    ConversationWithRating,
+    RatingStats
+)
+from .evaluation_manager import EvaluationManager
 from .utils.data_utils import add_post_and_child_node_ids
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------------------------
+
+async def get_es_client():
+    """Get Elasticsearch client based on configuration.
+
+    Returns:
+        Elasticsearch client instance (JesEs or LocalEs)
+    """
+    db_factory = DBFactory()
+    if Config.get_es_config():
+        jes_config = Config.get_es_config()
+        hosts = jes_config["hosts"]
+        user = jes_config["user"]
+        password = jes_config["password"]
+        return db_factory.get_instance(JesEs, hosts, user, password)
+    else:
+        return db_factory.get_instance(LocalEs)
+
+
+def cleanResult(s):
+    s=s.strip()
+    prefix = "```json"
+    suffix = "```"
+    if s.startswith(prefix):
+        s = s[len(prefix):]
+    if s.endswith(suffix):
+        s = s[:-len(suffix)]
+    return s
 
 
 # Basic route to redirect to the web interface
@@ -68,11 +109,12 @@ def check_alive():
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
-    upload_dir = os.path.join(Config.get_cache_save_dir(), "uploads", datetime_str)
+    upload_dir = os.path.join(Config.get_cache_save_dir(), "uploads")
     os.makedirs(upload_dir, exist_ok=True)
-    file_path = os.path.join(upload_dir, file.filename)
-    pic_url = f"../static/{datetime_str}/{file.filename}"
+
+    file_name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}"
+    file_path = os.path.join(upload_dir, file_name)
+    pic_url = f"../static/{file_name}"
 
     # Save file asynchronously
     async with aiofiles.open(file_path, "wb") as f:
@@ -96,15 +138,7 @@ async def get_node_info(item_id: str):
         dict: A ``WebResponse``-compatible dictionary containing the node
         payload enriched with ``pre_id`` and ``next_id`` navigation helpers.
     """
-    db_factory = DBFactory()
-    if Config.get_es_config():
-        jes_config = Config.get_es_config()
-        hosts = jes_config["hosts"]
-        user = jes_config["user"]
-        password = jes_config["password"]
-        es_client = db_factory.get_instance(JesEs, hosts, user, password)
-    else:
-        es_client = db_factory.get_instance(LocalEs)
+    es_client = await get_es_client()
     es_response = await es_client.search(
         Config.get_app_name() + "_node", {"query": {"term": {"_id": item_id}}}
     )
@@ -209,6 +243,7 @@ async def get_task_info(item_id: str):
         # Input item_id as trace_id
         trace_id = item_id
 
+
     es_response = await es_client.search(
         Config.get_app_name() + "_node",
         {
@@ -262,7 +297,6 @@ async def call(item: Item):
         dict: ``WebResponse`` wrapper containing the model output.
     """
     try:
-        # Preprocess environment variable substitutions
         pattern = r"^\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}$"
         for tree in [
             item.class_attr,
@@ -276,16 +310,7 @@ async def call(item: Item):
                 if match:
                     tree[k] = os.getenv(match.group(1), v)
 
-        # Validate required field exists
-        if "class_name" not in item.class_attr:
-            return WebResponse(
-                code=400, message="Missing required field: class_name"
-            ).to_dict()
-
-        # Set required name field
         item.class_attr["name"] = item.class_attr["class_name"].lower()
-
-        # Type conversion for LLM parameters
         llm_params_type_dict = {
             "temperature": float,
             "max_tokens": int,
@@ -293,27 +318,14 @@ async def call(item: Item):
         }
         for k, v in item.class_attr.get("llm_params", dict()).items():
             if k in llm_params_type_dict:
-                try:
-                    item.class_attr["llm_params"][k] = llm_params_type_dict[k](v)
-                except (ValueError, TypeError) as e:
-                    return WebResponse(
-                        code=400, message=f"Invalid parameter {k}: {str(e)}"
-                    ).to_dict()
-
-        # Create Oxy instance with security checks and execute
+                item.class_attr["llm_params"][k] = llm_params_type_dict[k](v)
         oxy = OxyFactory.create_oxy(item.class_attr["class_name"], **item.class_attr)
         oxy_response = await oxy.execute(OxyRequest(arguments=item.arguments))
         return WebResponse(data={"output": oxy_response.output}).to_dict()
-    except SecurityError as e:
-        logger.warning(
-            f"Security check failed: {str(e)}",
-            extra={"class_name": item.class_attr.get("class_name", "unknown")},
-        )
-        return WebResponse(code=403, message=f"Security error: {str(e)}").to_dict()
     except Exception:
         error_msg = traceback.format_exc()
-        logger.error(f"Error in /call endpoint: {error_msg}")
-        return WebResponse(code=500, message="Internal server error").to_dict()
+        logger.error(error_msg)
+        return WebResponse(code=500, message="遇到问题").to_dict()
 
 
 class Script(BaseModel):
@@ -368,17 +380,6 @@ def save_script(script: Script):
     return WebResponse(data={"script_id": script.name + ".json"}).to_dict()
 
 
-@router.get("/load_script")
-def load_script(item_id: str):
-    """Load a previously saved script.
-
-    Args:
-        script_id: Timestamp‑based identifier returned by :func:`save_script`.
-
-    Returns:
-        dict: ``WebResponse`` containing the original ``contents`` array or an
-        error message when the file is missing.
-    """
 @router.get("/load_script")
 def load_script(item_id: str):
     """Load a previously saved script.
@@ -891,3 +892,504 @@ async def get_agents():
     except Exception as e:
         logger.error(f"Failed to get agents: {e}")
         return WebResponse(code=500, message=f"Failed to get agents: {str(e)}").to_dict()
+
+# ---------------------------------------------------------------------------
+# Conversation Rating API Endpoints
+# ---------------------------------------------------------------------------
+
+# Initialize evaluation manager
+evaluation_manager = EvaluationManager()
+
+
+@router.post("/rating")
+async def create_rating(rating_request: RatingRequest, request: Request):
+    """Create or update conversation rating (like/dislike).
+
+    Each conversation (trace_id) can have multiple rating records.
+
+    Args:
+        rating_request: Rating request data containing trace_id, rating_type and optional comment
+        request: FastAPI request object (used to get client IP)
+
+    Returns:
+        dict: WebResponse wrapped rating result with success status and current statistics
+    """
+    try:
+        result = await evaluation_manager.create_rating(rating_request, request)
+
+        if result.success:
+            return WebResponse(
+                data={
+                    "rating_id": result.rating_id,
+                    "stats": result.current_stats.dict() if result.current_stats else None
+                },
+                message=result.message
+            ).to_dict()
+        else:
+            return WebResponse(
+                code=400,
+                message=result.message,
+                data={}
+            ).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Create rating error: {error_msg}")
+        return WebResponse(code=500, message="Rating operation failed").to_dict()
+
+
+@router.get("/rating/{trace_id}")
+async def get_rating_stats(trace_id: str):
+    """Get rating statistics for a specific conversation.
+
+    Args:
+        trace_id: Conversation trace ID
+
+    Returns:
+        dict: WebResponse wrapped rating statistics
+    """
+    try:
+        stats = await evaluation_manager.get_rating_stats(trace_id)
+
+        if stats:
+            return WebResponse(data=stats.dict()).to_dict()
+        else:
+            return WebResponse(
+                data={
+                    "trace_id": trace_id,
+                    "like_count": 0,
+                    "dislike_count": 0,
+                    "total_ratings": 0,
+                    "satisfaction_rate": 0.0
+                },
+                message="No rating data available"
+            ).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Get rating stats error: {error_msg}")
+        return WebResponse(code=500, message="Failed to get rating statistics").to_dict()
+
+
+@router.get("/rating/{trace_id}/current")
+async def get_current_rating(trace_id: str, erp: str = None):
+    """Get current rating record for a specific conversation.
+
+    Args:
+        trace_id: Conversation trace ID
+        erp: ERP system identifier for filtering specific ERP ratings (optional)
+
+    Returns:
+        dict: WebResponse wrapped current rating record, returns null if no rating exists
+    """
+    try:
+        ratings = await evaluation_manager.get_rating_history(trace_id, erp=erp)
+
+        current_rating = ratings[0] if ratings else None
+
+        return WebResponse(
+            data={
+                "trace_id": trace_id,
+                "current_rating": current_rating.dict() if current_rating else None
+            }
+        ).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Get current rating error: {error_msg}")
+        return WebResponse(code=500, message="Failed to get current rating").to_dict()
+
+
+@router.get("/rating/{trace_id}/history")
+async def get_rating_history(trace_id: str, erp: str = None):
+    """Get all rating history records for a specific conversation.
+
+    Each conversation can have multiple rating records, returned in descending order by creation time.
+
+    Args:
+        trace_id: Conversation trace ID
+        erp: ERP system identifier for filtering specific ERP ratings (optional)
+
+    Returns:
+        dict: WebResponse wrapped list of rating history records
+    """
+    try:
+        history = await evaluation_manager.get_rating_history(trace_id, erp=erp)
+
+        # Convert rating records to dictionary format
+        ratings_data = [rating.dict() for rating in history]
+
+        return WebResponse(
+            data={
+                "trace_id": trace_id,
+                "ratings": ratings_data,
+                "count": len(ratings_data),
+                "erp_filter": erp
+            }
+        ).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Get rating history error: {error_msg}")
+        return WebResponse(code=500, message="Failed to get rating history").to_dict()
+
+
+@router.get("/debug/rating_stats/{trace_id}")
+async def debug_rating_stats(trace_id: str):
+    """Debug endpoint: Check rating statistics storage for specific trace_id."""
+    try:
+        stats = await evaluation_manager.get_rating_stats(trace_id)
+        return WebResponse(data={
+            "trace_id": trace_id,
+            "stats": stats.dict() if stats else None,
+            "found": stats is not None
+        }).to_dict()
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Debug rating stats error: {error_msg}")
+        return WebResponse(code=500, message=f"Debug query failed: {str(e)}").to_dict()
+
+
+@router.get("/debug/trace/{trace_id}")
+async def debug_trace_info(trace_id: str):
+    """Debug endpoint: Query complete information for specified trace_id."""
+    try:
+        es_client = await get_es_client()
+
+        # Query trace information
+        trace_response = await es_client.search(
+            Config.get_app_name() + "_trace",
+            {"query": {"term": {"trace_id": trace_id}}, "size": 1}
+        )
+
+        trace_info = None
+        if trace_response["hits"]["hits"]:
+            trace_info = trace_response["hits"]["hits"][0]["_source"]
+
+        return WebResponse(data={
+            "trace_id": trace_id,
+            "trace_info": trace_info,
+            "found": trace_info is not None
+        }).to_dict()
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Debug trace info error: {error_msg}")
+        return WebResponse(code=500, message=f"Query failed: {str(e)}").to_dict()
+
+
+@router.delete("/rating/clear_all")
+async def clear_all_rating_data():
+    """Clear all rating data (dangerous operation, for testing and maintenance only)."""
+    try:
+        result = await evaluation_manager.clear_all_rating_data()
+        if result["success"]:
+            return WebResponse(
+                data=result,
+                message=f"Successfully cleared data: {result['deleted_ratings']} rating records, {result['deleted_stats']} stats records"
+            ).to_dict()
+        else:
+            return WebResponse(
+                code=500,
+                data=result,
+                message=f"Partial clearing failed, errors: {', '.join(result['errors'])}"
+            ).to_dict()
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Clear all rating data error: {error_msg}")
+        return WebResponse(code=500, message=f"Failed to clear rating data: {str(e)}").to_dict()
+
+
+@router.post("/rating/setup_indices")
+async def setup_rating_indices():
+    """Setup rating-related indexes (ensure field mappings are correct)."""
+    try:
+        result = await evaluation_manager.ensure_rating_indices_with_correct_mapping()
+        if result["success"]:
+            created_indices = []
+            if result["rating_index_created"]:
+                created_indices.append("rating index")
+            if result["rating_stats_index_created"]:
+                created_indices.append("rating stats index")
+
+            if created_indices:
+                message = f"Successfully created indexes: {', '.join(created_indices)}"
+            else:
+                message = "All indexes already exist, no creation needed"
+
+            return WebResponse(data=result, message=message).to_dict()
+        else:
+            return WebResponse(
+                code=500,
+                data=result,
+                message=f"Failed to setup indexes, errors: {', '.join(result['errors'])}"
+            ).to_dict()
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Setup rating indices error: {error_msg}")
+        return WebResponse(code=500, message=f"Failed to setup indexes: {str(e)}").to_dict()
+
+
+@router.get("/history_with_ratings")
+async def get_history_with_ratings(
+    page: int = 1,
+    page_size: int = 20,
+    rating_filter: str = "all"  # "all", "liked", "disliked", "unrated"
+):
+    """Get conversation history list with rating information, aggregated and displayed by group_id.
+
+    Optimized version: Only fetches rating data for the current page instead of all records.
+
+    Args:
+        page: Page number (starts from 1)
+        page_size: Number of items per page
+        rating_filter: Rating filter condition - "all"(all), "liked"(liked), "disliked"(disliked), "unrated"(unrated)
+
+    Returns:
+        dict: WebResponse wrapped list of conversation groups, aggregated by group_id with rating statistics
+    """
+    try:
+        es_client = await get_es_client()
+
+        # Phase 1: Quick aggregation to get group metadata only
+        # Query all traces but only get minimal fields for grouping
+        all_traces_response = await es_client.search(
+            Config.get_app_name() + "_trace",
+            {
+                "query": {"match_all": {}},
+                "_source": ["trace_id", "group_id", "create_time"],  # Only fetch essential fields
+                "size": 10000,
+                "sort": [{"create_time": {"order": "desc"}}],
+            },
+        )
+
+        # Build lightweight group metadata
+        groups_metadata = {}
+        trace_to_group_map = {}
+
+        for hit in all_traces_response["hits"]["hits"]:
+            source = hit["_source"]
+            trace_id = source.get("trace_id", "")
+            group_id = source.get("group_id", trace_id)
+            create_time = source.get("create_time", "")
+
+            trace_to_group_map[trace_id] = group_id
+
+            if group_id not in groups_metadata:
+                groups_metadata[group_id] = {
+                    "group_id": group_id,
+                    "trace_ids": [],
+                    "latest_create_time": create_time,
+                }
+
+            groups_metadata[group_id]["trace_ids"].append(trace_id)
+            if create_time > groups_metadata[group_id]["latest_create_time"]:
+                groups_metadata[group_id]["latest_create_time"] = create_time
+
+        # Get all trace_ids for rating lookup
+        all_trace_ids = list(trace_to_group_map.keys())
+
+        # Batch retrieve rating statistics for ALL traces (still needed for filtering)
+        ratings_map = await evaluation_manager.get_ratings_for_traces(all_trace_ids)
+
+        # Calculate aggregated rating stats per group
+        for group_id, metadata in groups_metadata.items():
+            total_likes = 0
+            total_dislikes = 0
+            has_rating = False
+
+            for trace_id in metadata["trace_ids"]:
+                rating_stats = ratings_map.get(trace_id)
+                if rating_stats:
+                    total_likes += rating_stats.like_count
+                    total_dislikes += rating_stats.dislike_count
+                    if rating_stats.total_ratings > 0:
+                        has_rating = True
+
+            metadata["total_likes"] = total_likes
+            metadata["total_dislikes"] = total_dislikes
+            metadata["has_rating"] = has_rating
+
+        # Filter groups based on rating criteria
+        filtered_groups_metadata = []
+        for group_id, metadata in groups_metadata.items():
+            if rating_filter == "all":
+                filtered_groups_metadata.append(metadata)
+            elif rating_filter == "liked" and metadata["total_likes"] > 0:
+                filtered_groups_metadata.append(metadata)
+            elif rating_filter == "disliked" and metadata["total_dislikes"] > 0:
+                filtered_groups_metadata.append(metadata)
+            elif rating_filter == "unrated" and not metadata["has_rating"]:
+                filtered_groups_metadata.append(metadata)
+
+        # Sort by latest time
+        filtered_groups_metadata.sort(key=lambda x: x["latest_create_time"], reverse=True)
+
+        # Pagination on metadata level
+        total_groups = len(filtered_groups_metadata)
+        from_index = (page - 1) * page_size
+        to_index = from_index + page_size
+        page_groups_metadata = filtered_groups_metadata[from_index:to_index]
+
+        # Phase 2: Only fetch full conversation details for current page
+        page_trace_ids = []
+        for metadata in page_groups_metadata:
+            page_trace_ids.extend(metadata["trace_ids"])
+
+        # Fetch full trace details only for current page
+        page_traces_response = await es_client.search(
+            Config.get_app_name() + "_trace",
+            {
+                "query": {"terms": {"trace_id": page_trace_ids}},
+                "size": len(page_trace_ids),
+            },
+        )
+
+        # Build trace details map
+        trace_details_map = {}
+        for hit in page_traces_response["hits"]["hits"]:
+            source = hit["_source"]
+            trace_id = source.get("trace_id", "")
+            trace_details_map[trace_id] = source
+
+        # Fetch rating history only for current page
+        rating_histories_map = await evaluation_manager.get_rating_histories_for_traces(page_trace_ids)
+
+        # Build final response for current page
+        conversation_groups = []
+        for metadata in page_groups_metadata:
+            group_id = metadata["group_id"]
+            conversations = []
+
+            for trace_id in metadata["trace_ids"]:
+                trace_detail = trace_details_map.get(trace_id)
+                if not trace_detail:
+                    continue
+
+                conversation_data = {
+                    "trace_id": trace_id,
+                    "input": trace_detail.get("input", ""),
+                    "callee": trace_detail.get("callee", ""),
+                    "output": trace_detail.get("output", ""),
+                    "create_time": trace_detail.get("create_time", ""),
+                    "from_trace_id": trace_detail.get("from_trace_id", ""),
+                    "group_id": group_id,
+                }
+
+                rating_stats = ratings_map.get(trace_id)
+                rating_history = rating_histories_map.get(trace_id, [])
+
+                conversation_with_rating = ConversationWithRating(
+                    **conversation_data,
+                    rating_stats=rating_stats,
+                    rating_history=rating_history
+                )
+                conversations.append(conversation_with_rating.dict())
+
+            # Sort conversations by create_time
+            conversations.sort(key=lambda x: x["create_time"])
+
+            conversation_groups.append({
+                "group_id": group_id,
+                "conversations": conversations,
+                "latest_create_time": metadata["latest_create_time"],
+                "conversation_count": len(conversations),
+                "total_likes": metadata["total_likes"],
+                "total_dislikes": metadata["total_dislikes"],
+                "has_rating": metadata["has_rating"],
+            })
+
+        return WebResponse(
+            data={
+                "conversation_groups": conversation_groups,
+                "total": total_groups,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total_groups + page_size - 1) // page_size,
+            }
+        ).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Get history with ratings error: {error_msg}")
+        return WebResponse(code=500, message="Failed to get conversation history").to_dict()
+
+
+@router.get("/analytics/ratings")
+async def get_rating_analytics(days: int = 7):
+    """Get rating statistics and analysis data.
+
+    Args:
+        days: Number of days to analyze (default 7 days)
+
+    Returns:
+        dict: WebResponse wrapped rating analytics data
+    """
+    try:
+        stats = await evaluation_manager.get_overall_rating_stats(days)
+        return WebResponse(data=stats).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Get rating analytics error: {error_msg}")
+        return WebResponse(code=500, message="Failed to get rating analytics").to_dict()
+
+
+@router.post("/rating/{trace_id}/rebuild_stats")
+async def rebuild_rating_stats(trace_id: str):
+    """Rebuild rating statistics for specific conversation (debug and repair function).
+
+    Args:
+        trace_id: Conversation trace ID
+
+    Returns:
+        dict: WebResponse wrapped rebuild result
+    """
+    try:
+        # Use evaluation_manager to recalculate statistics
+        es_client = await evaluation_manager._get_es_client()
+
+        # Manually call statistics update
+        stats = await evaluation_manager._update_rating_stats(es_client, trace_id)
+
+        return WebResponse(
+            data={
+                "trace_id": trace_id,
+                "rebuilt_stats": stats.dict(),
+                "message": "Statistics recalculated"
+            }
+        ).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Rebuild rating stats error: {error_msg}")
+        return WebResponse(code=500, message="Failed to rebuild statistics").to_dict()
+
+
+@router.delete("/rating/{rating_id}")
+async def delete_rating(rating_id: str):
+    """Delete specified rating record (admin function).
+
+    Args:
+        rating_id: Rating record ID
+
+    Returns:
+        dict: WebResponse wrapped deletion result
+    """
+    try:
+        success = await evaluation_manager.delete_rating(rating_id)
+
+        if success:
+            return WebResponse(
+                data={"deleted": True, "rating_id": rating_id},
+                message="Rating deleted successfully"
+            ).to_dict()
+        else:
+            return WebResponse(
+                code=404,
+                message="Rating record not found"
+            ).to_dict()
+
+    except Exception as e:
+        error_msg = traceback.format_exc()
+        logger.error(f"Delete rating error: {error_msg}")
+        return WebResponse(code=500, message="Failed to delete rating").to_dict()
