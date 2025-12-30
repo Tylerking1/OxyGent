@@ -166,10 +166,10 @@ class EvaluationManager:
             es_client = await self._get_es_client()
 
             # Ensure indexes exist (auto-create on first use)
-            try:
-                await self._ensure_rating_indexes(es_client)
-            except Exception as e:
-                logger.warning(f"Error ensuring indexes exist: {e}")
+            # try:
+            #     await self._ensure_rating_indexes(es_client)
+            # except Exception as e:
+            #     logger.warning(f"Error ensuring indexes exist: {e}")
 
             # Check if conversation exists (warning only, doesn't block rating)
             trace_exists = await self._check_trace_exists(
@@ -219,57 +219,57 @@ class EvaluationManager:
             logger.error(f"Failed to create/update rating: {str(e)}")
             return RatingResponse(success=False, message=f"Rating failed: {str(e)}")
 
-    async def _ensure_rating_indexes(self, es_client) -> None:
-        """Ensure rating-related indexes exist, create if not present.
+    # async def _ensure_rating_indexes(self, es_client) -> None:
+    #     """Ensure rating-related indexes exist, create if not present.
 
-        Args:
-            es_client: ES client instance
-        """
-        if not hasattr(es_client, "create_index"):
-            return  # Client doesn't support index creation, skip
+    #     Args:
+    #         es_client: ES client instance
+    #     """
+    #     if not hasattr(es_client, "create_index"):
+    #         return  # Client doesn't support index creation, skip
 
-        # Rating record index mapping
-        rating_mapping = {
-            "settings": {"number_of_shards": 1, "number_of_replicas": 0},
-            "mappings": {
-                "properties": {
-                    "rating_id": {"type": "keyword"},
-                    "trace_id": {"type": "keyword"},
-                    "rating_type": {"type": "keyword"},
-                    "user_id": {"type": "keyword"},
-                    "user_ip": {"type": "ip"},
-                    "comment": {"type": "text"},
-                    "erp": {"type": "keyword"},
-                    "create_time": {"type": "keyword"},
-                    "update_time": {"type": "keyword"},
-                }
-            },
-        }
+    #     # Rating record index mapping
+    #     rating_mapping = {
+    #         "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+    #         "mappings": {
+    #             "properties": {
+    #                 "rating_id": {"type": "keyword"},
+    #                 "trace_id": {"type": "keyword"},
+    #                 "rating_type": {"type": "keyword"},
+    #                 "user_id": {"type": "keyword"},
+    #                 "user_ip": {"type": "ip"},
+    #                 "comment": {"type": "text"},
+    #                 "erp": {"type": "keyword"},
+    #                 "create_time": {"type": "keyword"},
+    #                 "update_time": {"type": "keyword"},
+    #             }
+    #         },
+    #     }
 
-        # Rating statistics index mapping
-        rating_stats_mapping = {
-            "settings": {"number_of_shards": 1, "number_of_replicas": 0},
-            "mappings": {
-                "properties": {
-                    "trace_id": {"type": "keyword"},
-                    "like_count": {"type": "integer"},
-                    "dislike_count": {"type": "integer"},
-                    "total_ratings": {"type": "integer"},
-                    "satisfaction_rate": {"type": "float"},
-                    "last_updated": {"type": "keyword"},
-                }
-            },
-        }
+    #     # Rating statistics index mapping
+    #     rating_stats_mapping = {
+    #         "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+    #         "mappings": {
+    #             "properties": {
+    #                 "trace_id": {"type": "keyword"},
+    #                 "like_count": {"type": "integer"},
+    #                 "dislike_count": {"type": "integer"},
+    #                 "total_ratings": {"type": "integer"},
+    #                 "satisfaction_rate": {"type": "float"},
+    #                 "last_updated": {"type": "keyword"},
+    #             }
+    #         },
+    #     }
 
-        try:
-            await es_client.create_index(self.rating_index, rating_mapping)
-        except Exception as e:
-            logger.debug(f"Rating index already exists or creation failed: {e}")
+    #     try:
+    #         await es_client.create_index(self.rating_index, rating_mapping)
+    #     except Exception as e:
+    #         logger.debug(f"Rating index already exists or creation failed: {e}")
 
-        try:
-            await es_client.create_index(self.rating_stats_index, rating_stats_mapping)
-        except Exception as e:
-            logger.debug(f"Stats index already exists or creation failed: {e}")
+    #     try:
+    #         await es_client.create_index(self.rating_stats_index, rating_stats_mapping)
+    #     except Exception as e:
+    #         logger.debug(f"Stats index already exists or creation failed: {e}")
 
     async def _check_trace_exists(self, es_client, trace_id: str) -> bool:
         """Check if conversation trace exists.

@@ -430,6 +430,91 @@ class MAS(BaseModel):
                 "settings": Config.get_es_settings_config(),
             },
         )
+        # prompt history table
+        await self.es_client.create_index(
+            Config.get_app_name() + "_prompt_history",
+            {
+                "mappings": {
+                    "properties": {
+                        "prompt_key": {
+                            "type": "keyword"  # Prompt key for exact matching
+                        },
+                        "prompt_content": {
+                            "type": "text",
+                            "analyzer": "standard",  # Prompt content
+                        },
+                        "description": {
+                            "type": "text"  # Prompt description
+                        },
+                        "category": {
+                            "type": "keyword"  # Category: system, expert, workflow, etc.
+                        },
+                        "agent_type": {
+                            "type": "keyword"  # Corresponding Agent type
+                        },
+                        "version": {
+                            "type": "integer"  # Version number
+                        },
+                        "is_active": {
+                            "type": "boolean"  # Whether active
+                        },
+                        "is_history": {
+                            "type": "boolean"  # Whether this is a history record
+                        },
+                        "history_id": {
+                            "type": "keyword"  # History record ID
+                        },
+                        "created_at": {"type": "date"},
+                        "updated_at": {"type": "date"},
+                        "archived_at": {"type": "date"},
+                        "created_by": {
+                            "type": "keyword"  # Creator
+                        },
+                        "tags": {
+                            "type": "keyword"  # Tags
+                        },
+                    }
+                },
+                "settings": Config.get_es_settings_config(),
+            },
+        )
+        # Rating record index mapping
+        await self.es_client.create_index(
+            Config.get_app_name() + "_rating",
+            {
+                "mappings": {
+                    "properties": {
+                        "rating_id": {"type": "keyword"},
+                        "trace_id": {"type": "keyword"},
+                        "rating_type": {"type": "keyword"},
+                        "user_id": {"type": "keyword"},
+                        "user_ip": {"type": "ip"},
+                        "comment": {"type": "text"},
+                        "erp": {"type": "keyword"},
+                        "create_time": {"type": "keyword"},
+                        "update_time": {"type": "keyword"},
+                    }
+                },
+                "settings": Config.get_es_settings_config(),
+            },
+        )
+        # Rating statistics index mapping
+        await self.es_client.create_index(
+            Config.get_app_name() + "_rating_stats",
+            {
+                "mappings": {
+                    "properties": {
+                        "trace_id": {"type": "keyword"},
+                        "like_count": {"type": "integer"},
+                        "dislike_count": {"type": "integer"},
+                        "total_ratings": {"type": "integer"},
+                        "satisfaction_rate": {"type": "float"},
+                        "last_updated": {"type": "keyword"},
+                    }
+                },
+                "settings": Config.get_es_settings_config(),
+            },
+        )
 
         # init redis client
         redis_config = Config.get_redis_config()
