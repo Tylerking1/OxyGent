@@ -14,18 +14,17 @@
 </head>
 <body>
 <div class="history-container">
-    <div class="history-header">
+    <div class="header">
         <div class="header-left">
-            <img class="header-logo" src="./image/group-favicon.png" alt="OxyGent">
-            <h1>History</h1>
+            <img class="header-left-img" src="./image/group-favicon.png" alt="OxyGent">
         </div>
+        <div id="header_title_id" class="header-title">History Manager</div>
         <div class="header-right">
-            <button class="btn-back" onclick="goBack()">
+            <button onclick="window.location.href='./index.html'" title="Back to Chat">
                 <img src="./image/arrow-left.svg" alt="Back">
             </button>
         </div>
-    </div>
-    
+    </div>    
     <div class="history-content">
         <div class="search-bar">
             <div class="search-input-container">
@@ -448,10 +447,6 @@
     
     function openConversation(traceId) {
         window.location.href = `./node.html?id=${traceId}`;
-    }
-    
-    function goBack() {
-        window.location.href = "./index.html";
     }
     
     function formatDate(dateString) {

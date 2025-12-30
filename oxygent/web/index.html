@@ -605,6 +605,7 @@
             if (jm["content"]["caller"] === 'user') {
                 // answer
                 from_trace_id = jm["content"]["current_trace_id"];
+                var trace_id = jm["content"]["current_trace_id"] || jm["content"]["trace_id"];
                 var markdownInput = jm["content"]["output"];
                 if (typeof markdownInput !== 'string') {
                     markdownInput = JSON.stringify(markdownInput, null, 2);
@@ -623,6 +624,7 @@
                     }
                     // 移除streaming-content类并清理
                     streaming_info.element.removeClass("streaming-content");
+                    attach_rating_ui(streaming_info.element.closest("li"), trace_id);
                     delete streaming_elements_map[key];
                 } else if (current_streaming_element && current_streaming_agent) {
                     // 向后兼容
@@ -630,9 +632,10 @@
                     if (finalContent) {
                         markdownInput = finalContent;
                     }
+                    attach_rating_ui(current_streaming_element.closest("li"), trace_id);
                 }
                 
-                var msg = {"role": jm["content"].callee, "content": markdownInput};
+                var msg = {"role": jm["content"].callee, "content": markdownInput, "trace_id": trace_id};
                 chats.push(msg);
                 history["answer"] = JSON.parse(JSON.stringify(chats));
                 llm_is_work = false;
@@ -851,7 +854,197 @@
         }
     }
 
-    function send_msg_to_chatbox(msg, name = "user", at = "", scroll_top = true) {
+    const rating_config = {
+        endpoint: "/rating",
+        erp: "oxygent"
+    };
+
+    function submit_rating(container, rating_type, comment) {
+        var trace_id = container.data("trace-id");
+        if (!trace_id) {
+            return;
+        }
+        
+        fetch(rating_config.endpoint, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                trace_id: trace_id,
+                rating_type: rating_type,
+                comment: comment || "",
+                erp: rating_config.erp
+            })
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error("Request failed");
+                }
+                return response.json();
+            })
+            .then(function () {
+                // Reset active states
+                container.find(".btn-icon").removeClass("active");
+                
+                // Set new active state (triggers CSS animation)
+                if (rating_type === "like") {
+                    container.find(".btn-icon.like").addClass("active");
+                } else if (rating_type === "dislike") {
+                    container.find(".btn-icon.dislike").addClass("active");
+                }
+            })
+            .catch(function (err) {
+                console.error("Rating submission error:", err);
+            });
+    }
+
+    function create_rating_container(trace_id) {
+        var container = $('<div class="message-rating-container">').data("trace-id", trace_id);
+        var actions = $('<div class="message-rating-actions">');
+
+        // Outline SVGs for Like/Dislike
+        var likeSvg = '<svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>';
+        var dislikeSvg = '<svg viewBox="0 0 24 24"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>';
+
+        var likeBtn = $('<button type="button" class="btn-icon like" title="Good response">' + likeSvg + '</button>');
+        var dislikeBtn = $('<button type="button" class="btn-icon dislike" title="Bad response">' + dislikeSvg + '</button>');
+
+        // Feedback Panel
+        var feedbackPanel = $('<div class="feedback-panel">');
+        var feedbackHeader = $('<div class="feedback-header"><span>What\'s the issue?</span><span class="feedback-close">&times;</span></div>');
+        
+        // Row 1: Options + Submit Button (Dynamic Slot 1)
+        var row1 = $('<div class="feedback-row-1">');
+        var feedbackOptions = $('<div class="feedback-options">');
+        row1.append(feedbackOptions);
+
+        // Row 2: Input + Submit Button (Dynamic Slot 2)
+        var row2 = $('<div class="feedback-row-2">');
+        var inputWrapper = $('<div class="feedback-input-wrapper">');
+        var customInput = $('<input type="text" class="feedback-input" placeholder="(Optional) Tell us more about your experience">');
+        inputWrapper.append(customInput);
+        row2.append(inputWrapper);
+
+        // Submit Button (Single instance moved around)
+        var submitBtn = $('<button class="feedback-submit-btn">Submit</button>');
+
+        var reasons = [
+            "Offensive/Unsafe",
+            "Factually incorrect",
+            "Not helpful",
+            "Privacy concern",
+            "Other"
+        ];
+
+        // Build Options
+        reasons.forEach(function(reason) {
+            var btn = $('<button class="feedback-option">' + reason + '</button>');
+            btn.on("click", function() {
+                $(this).toggleClass('selected');
+                updatePanelState();
+            });
+            feedbackOptions.append(btn);
+        });
+
+        function updatePanelState() {
+            var selectedTags = feedbackOptions.find('.feedback-option.selected');
+            var isOtherSelected = false;
+            var hasSelection = selectedTags.length > 0;
+
+            selectedTags.each(function() {
+                if ($(this).text() === "Other") {
+                    isOtherSelected = true;
+                }
+            });
+
+            if (!hasSelection) {
+                submitBtn.hide();
+                row2.hide(); 
+                if (submitBtn.parent().length) submitBtn.detach(); 
+            } else {
+                submitBtn.show(); 
+                submitBtn.css('display', 'block'); 
+
+                if (isOtherSelected) {
+                    // Mode 2: Show Row 2, Move button to Row 2
+                    row2.css('display', 'flex'); 
+                    row2.append(submitBtn);
+                    customInput.focus();
+                } else {
+                    // Mode 1: Hide Row 2, Move button to Row 1
+                    row2.hide();
+                    customInput.val(''); 
+                    row1.append(submitBtn);
+                }
+            }
+        }
+
+        // Close logic
+        feedbackHeader.find('.feedback-close').on('click', function() {
+            feedbackPanel.fadeOut(200);
+        });
+
+        // Submit Logic
+        submitBtn.on('click', function() {
+            var selectedReasons = [];
+            feedbackOptions.find('.feedback-option.selected').each(function() {
+                selectedReasons.push($(this).text());
+            });
+            
+            var comment = customInput.val().trim();
+            
+            var finalReason = selectedReasons.join(", ");
+            if (comment) {
+                if (finalReason) {
+                    finalReason += " | Details: " + comment;
+                } else {
+                    finalReason = comment;
+                }
+            }
+            
+            submit_rating(container, "dislike", finalReason || "Unspecified feedback");
+            feedbackPanel.fadeOut(200);
+        });
+
+        feedbackPanel.append(feedbackHeader, row1, row2);
+
+        // Button Actions
+        likeBtn.on("click", function () {
+            // Close feedback panel if open
+            feedbackPanel.hide();
+            // Submit Like
+            submit_rating(container, "like", "");
+        });
+
+        dislikeBtn.on("click", function () {
+            // Toggle Feedback Panel
+            if (feedbackPanel.is(':visible')) {
+                feedbackPanel.fadeOut(200);
+            } else {
+                feedbackPanel.fadeIn(200);
+                // Reset state
+                feedbackOptions.find('.feedback-option').removeClass('selected');
+                submitBtn.hide();
+                row2.hide();
+                customInput.val('');
+            }
+        });
+
+        actions.append(likeBtn, dislikeBtn);
+        container.append(actions, feedbackPanel);
+        return container;
+    }
+
+    function attach_rating_ui(li, trace_id) {
+        if (!trace_id || !li || li.length === 0) {
+            return;
+        }
+        if (li.find(".message-rating-container").length > 0) {
+            return;
+        }
+        li.append(create_rating_container(trace_id));
+    }
+
+    function send_msg_to_chatbox(msg, name = "user", at = "", scroll_top = true, trace_id = "") {
         var li = $("<li>");
         if (name === "user") {
             li.addClass("me");
@@ -886,6 +1079,10 @@
             }
         } else {
             li.append($('<span>').append($("<section>").css("color", agentImgMap[agent_id_dict[at]]?.color).text("@" + at)).append(msg));
+        }
+
+        if (name === master_agent_name && at === "") {
+            attach_rating_ui(li, trace_id);
         }
 
         if (name === "user" && filesToUpload.length > 0) {
@@ -1039,7 +1236,7 @@
             } else if (no_change_history && from_size < to_size) {
                 // add
                 jm["content"].slice(from_size - to_size).forEach(chat => {
-                    send_msg_to_chatbox(chat.content, chat.role, chat.at, false);
+                    send_msg_to_chatbox(chat.content, chat.role, chat.at, false, chat.trace_id);
                 });
                 scroll_top_div_chat_history();
                 return;
@@ -1047,7 +1244,7 @@
             no_change_history = true;
             div_chatbox.empty();
             jm["content"].forEach(chat => {
-                send_msg_to_chatbox(chat.content, chat.role, chat.at, false);
+                send_msg_to_chatbox(chat.content, chat.role, chat.at, false, chat.trace_id);
             });
             scroll_top_div_chat_history();
         }
